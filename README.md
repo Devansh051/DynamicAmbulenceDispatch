@@ -49,18 +49,6 @@ graph LR
 
 ```
 
-### Api Network Diagram
-
-```mermaid
-flowchart TD
-    A[User (Browser)]
-      -->|Interacts| B[Next.js Frontend<br/>(Bootstrap UI)]
-    B -->|API Requests (REST/HTTP)| C[C Backend API<br/>(Dynamic Ambulance Dispatch System)]
-    C -->|Data| B
-    B -->|UI Updates| A
-
-
-```
 
 ---
 
