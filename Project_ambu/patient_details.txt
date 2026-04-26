@@ -24,7 +24,7 @@ Hospital Assigned: 2.Aster_CMI_Hospital(sahakarnagar)
 Optimal Cost: 4000.00 INR
 Severity: 1.00
 Current_Treatment_Cost(INR): 3000.00
-Total_expenditure(INR): 13900.23
+Total_expenditure(INR): 22900.23
 -----------------
 Patient ID: 1332
 Name: Sid
