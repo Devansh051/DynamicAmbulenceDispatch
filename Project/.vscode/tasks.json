@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "C/C++: Build Dynamic Ambulance Dispatch",
+            "command": "g++",
+            "args": [
+                "-std=c++17",
+                "-static",
+                "-static-libgcc",
+                "-static-libstdc++",
+                "hospital_final.cpp",
+                "database_repository.cpp",
+                "-lodbc32",
+                "-o",
+                "hospital_mssql.exe"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "Compiles hospital_final.cpp with database_repository.cpp and ODBC library"
+        }
+    ]
+}

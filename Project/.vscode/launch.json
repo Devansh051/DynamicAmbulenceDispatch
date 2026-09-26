@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Dynamic Ambulance Dispatch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/hospital_mssql.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "preLaunchTask": "C/C++: Build Dynamic Ambulance Dispatch"
+        }
+    ]
+}

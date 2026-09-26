@@ -22,9 +22,9 @@ Insurance: no
 Phone Number: 9798798792
 Hospital Assigned: 2.Aster_CMI_Hospital(sahakarnagar)
 Optimal Cost: 4000.00 INR
-Severity: 1.00
-Current_Treatment_Cost(INR): 3000.00
-Total_expenditure(INR): 22900.23
+Severity: 3.00
+Current_Treatment_Cost(INR): 1800.00
+Total_expenditure(INR): 24700.23
 -----------------
 Patient ID: 1332
 Name: Sid

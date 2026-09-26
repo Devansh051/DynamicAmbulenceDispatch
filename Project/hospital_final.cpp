@@ -1,5 +1,4 @@
 #include <iostream>
-#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -12,6 +11,8 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+
+#include "database_repository.h"
 
 using namespace std;
 
@@ -42,226 +43,19 @@ bool confirmOTP() {
 #define MAX_LINE 1000
 #define MAX_PATIENTS 100
 #define MAX_FIELD_LEN 100
-#define FILENAME "patient_details.txt"
-#define MAX_PHONE_NUMBER_LEN 15
 #define MIN_FUEL_THRESHOLD 20   // Minimum fuel percentage required for dispatch
 #define REFUEL_TIME_MS 3000     // Time taken to refuel (3 seconds)
 
 static char current_patient[10]; // Global variable to store current patient ID
 
-struct AvailableLaterArgs {
-    int ambId;
-    int hospital;
-    char filename[128];
-};
-
 // Function to get a specific patient parameter by ID
 float get_patient_param(const char* patient_id, const char* param) {
-    ifstream file("patient_details.txt");
-    if (!file.is_open()) {
-        cout << "Could not open file." << endl;
-        return -1.0f;
-    }
-
-    string line;
-    bool found = false;
-
-    // Find the patient block
-    while (getline(file, line)) {
-        if (line.substr(0, 11) == "Patient ID:") {
-            string id = line.substr(12);
-            // Trim whitespace
-            size_t start = id.find_first_not_of(" \t");
-            if (start != string::npos) id = id.substr(start);
-            size_t end = id.find_first_of(" \t\n\r");
-            if (end != string::npos) id = id.substr(0, end);
-            if (id == string(patient_id)) {
-                found = true;
-                break;
-            }
-        }
-    }
-
-    if (!found) {
-        file.close();
-        return -1.0f;
-    }
-
-    // Now, search for the parameter in the next lines
-    float result = -1.0f;
-    string paramStr(param);
-    while (getline(file, line)) {
-        if (line.substr(0, 17) == "-----------------") {
-            break; // End of this patient's block
-        }
-        if (line.length() > paramStr.length() && line.substr(0, paramStr.length()) == paramStr && line[paramStr.length()] == ':') {
-            string value_str = line.substr(paramStr.length() + 1);
-            // Skip spaces
-            size_t pos = value_str.find_first_not_of(" \t");
-            if (pos != string::npos) {
-                value_str = value_str.substr(pos);
-            }
-            try {
-                result = stof(value_str);
-            } catch (...) {
-                result = -1.0f;
-            }
-            break;
-        }
-    }
-
-    file.close();
-    return result;
+    return database().getPatientNumericParameter(atoi(patient_id), param);
 }
 
 // Function to set a specific patient parameter by ID
 int set_patient_param(const char* patient_id, const char* param, float new_value) {
-    ifstream file("patient_details.txt");
-    if (!file.is_open()) {
-        cout << "Could not open file for reading." << endl;
-        return 0;
-    }
-
-    ofstream temp("temp_patient_details.txt");
-    if (!temp.is_open()) {
-        cout << "Could not open temp file for writing." << endl;
-        file.close();
-        return 0;
-    }
-
-    string line;
-    bool found_patient = false;
-    int updated = 0;
-    string paramStr(param);
-
-    while (getline(file, line)) {
-        // Check for patient block
-        if (line.substr(0, 11) == "Patient ID:") {
-            string id = line.substr(12);
-            size_t start = id.find_first_not_of(" \t");
-            if (start != string::npos) id = id.substr(start);
-            size_t end = id.find_first_of(" \t\n\r");
-            if (end != string::npos) id = id.substr(0, end);
-            found_patient = (id == string(patient_id));
-        }
-
-        // If in the correct patient block, look for the parameter
-        if (found_patient && line.length() > paramStr.length() && line.substr(0, paramStr.length()) == paramStr && line[paramStr.length()] == ':') {
-            char buf[256];
-            sprintf(buf, "%s: %.2f", param, new_value);
-            temp << buf << "\n";
-            updated = 1;
-            found_patient = false; // Only update the first occurrence in the block
-        } else {
-            temp << line << "\n";
-        }
-
-        // End of patient block
-        if (found_patient && line.substr(0, 17) == "-----------------") {
-            found_patient = false;
-        }
-    }
-
-    file.close();
-    temp.close();
-
-    // Replace original file with updated file
-    if (updated) {
-        remove("patient_details.txt");
-        rename("temp_patient_details.txt", "patient_details.txt");
-    } else {
-        remove("temp_patient_details.txt");
-    }
-
-    return updated;
-}
-
-// Helper: check if file is CSV by extension
-bool is_csv_file(const char *filename) {
-    string fn(filename);
-    size_t dot = fn.rfind('.');
-    if (dot != string::npos) {
-        return fn.substr(dot) == ".csv";
-    }
-    return false;
-}
-
-// Read matrix from .txt or .csv
-void readMatrixFromFile(int matrix[15][15], const char *filename) {
-    ifstream file(filename);
-    if (!file.is_open()) {
-        cout << "Error opening file " << filename << " for reading." << endl;
-        exit(EXIT_FAILURE);
-    }
-    string line;
-    for (int i = 0; i < 15; i++) {
-        if (!getline(file, line)) {
-            cout << "Error reading matrix from file " << filename << "." << endl;
-            file.close();
-            exit(EXIT_FAILURE);
-        }
-        stringstream ss(line);
-        string token;
-        int j = 0;
-        char delim = is_csv_file(filename) ? ',' : ' ';
-        while (getline(ss, token, delim) && j < 15) {
-            // Trim whitespace
-            size_t start = token.find_first_not_of(" \t\n\r");
-            if (start != string::npos) token = token.substr(start);
-            if (!token.empty()) {
-                matrix[i][j++] = atoi(token.c_str());
-            }
-        }
-        if (j != 15) {
-            cout << "Matrix row " << i + 1 << " in " << filename << " does not have 15 columns." << endl;
-            file.close();
-            exit(EXIT_FAILURE);
-        }
-    }
-    file.close();
-}
-
-// Read hospital names from .txt or .csv
-void readHospitalNamesFromFile(char hospital_names[15][50], const char *filename) {
-    ifstream file(filename);
-    if (!file.is_open()) {
-        cout << "Error opening file " << filename << " for reading." << endl;
-        exit(EXIT_FAILURE);
-    }
-    string line;
-    for (int i = 0; i < 15; i++) {
-        if (!getline(file, line)) {
-            cout << "Error reading hospital names from file " << filename << "." << endl;
-            file.close();
-            exit(EXIT_FAILURE);
-        }
-        if (is_csv_file(filename)) {
-            size_t comma = line.find(',');
-            if (comma != string::npos) {
-                strncpy(hospital_names[i], line.substr(0, comma).c_str(), 49);
-            } else {
-                strncpy(hospital_names[i], line.c_str(), 49);
-            }
-        } else {
-            strncpy(hospital_names[i], line.c_str(), 49);
-        }
-        hospital_names[i][49] = '\0';
-    }
-    file.close();
-}
-
-// Prompt user for file path, use default if empty
-void prompt_filepath(const char *prompt, char *out, size_t outsize, const char *def) {
-    cout << prompt << " [" << def << "]: ";
-    string input;
-    getline(cin, input);
-    if (input.empty()) {
-        strncpy(out, def, outsize - 1);
-        out[outsize - 1] = '\0';
-    } else {
-        strncpy(out, input.c_str(), outsize - 1);
-        out[outsize - 1] = '\0';
-    }
+    return database().updatePatientNumericParameter(atoi(patient_id), param, new_value) ? 1 : 0;
 }
 
 struct Node {
@@ -269,26 +63,6 @@ struct Node {
     int casualtiesPresent;
     int weight;
     Node *link;
-};
-
-// Add Patient Record Structure
-struct Patient {
-    int id;
-    char name[50];
-    int age;
-    char bloodGroup[5];
-    char gender;
-    char address[100];
-    char condition[100]; // e.g., "critical", "stable"
-    char vaccinesDone;
-    char areaOfTreatment[50];
-    char insurance[5];
-    char phoneNumber[MAX_PHONE_NUMBER_LEN]; // Changed to string for easier handling
-    char hospitalAssigned[50];
-    double optimalCost;
-    float severity;
-    float current_treatment_cost;
-    float total_expenditure;
 };
 
 // Function to insert a node at the rear of the linked list
@@ -398,24 +172,7 @@ void printAdmissionDifficulty(int casualties) {
 
 // Function to check if a patient ID already exists
 bool isPatientIdExist(int patientId) {
-    ifstream patientFile("patient_details.txt");
-    if (!patientFile.is_open()) {
-        return false; // File doesn't exist, so the ID is not found
-    }
-
-    string line;
-    while (getline(patientFile, line)) {
-        int existingPatientId;
-        if (sscanf(line.c_str(), "Patient ID: %d", &existingPatientId) == 1) {
-            if (existingPatientId == patientId) {
-                patientFile.close();
-                return true; // ID is found
-            }
-        }
-    }
-
-    patientFile.close();
-    return false; // ID is not found
+    return database().patientExists(patientId);
 }
 
 // Function to handle patient details
@@ -518,36 +275,26 @@ bool handlePatientDetails(int src, int nearestHospital, int averageWeight, char 
         return false;
     }
 
-    ofstream patientFile("patient_details.txt", ios::app);
-    if (!patientFile.is_open()) {
-        cout << "Error opening patient details file." << endl;
+    Patient patient{};
+    patient.id = patientId;
+    strncpy(patient.name, name, sizeof(patient.name) - 1);
+    patient.age = age;
+    strncpy(patient.bloodGroup, bloodGroup, sizeof(patient.bloodGroup) - 1);
+    patient.vaccinesDone = toupper(vaccinesDone);
+    strncpy(patient.areaOfTreatment, areaOfTreatment, sizeof(patient.areaOfTreatment) - 1);
+    strncpy(patient.insurance, insurance, sizeof(patient.insurance) - 1);
+    snprintf(patient.phoneNumber, sizeof(patient.phoneNumber), "%lld", phoneNumber);
+    strncpy(patient.hospitalAssigned, hospital_names[nearestHospital - 1], sizeof(patient.hospitalAssigned) - 1);
+    patient.optimalCost = static_cast<double>(averageWeight) * moneyFactor;
+    patient.severity = static_cast<float>(severity);
+    patient.current_treatment_cost = static_cast<float>(static_cast<double>(averageWeight) * moneyFactor *
+        (severity == 5 ? 2.0 : (severity == 4 ? 1.5 : (severity == 3 ? 1.2 : (severity == 2 ? 1.0 : 0.8)))));
+    patient.total_expenditure = patient.current_treatment_cost;
+
+    if (!database().insertPatient(patient, nearestHospital)) {
+        cout << "Error saving patient details to SQL Server." << endl;
         return false;
     }
-
-    char buf[512];
-    patientFile << "Patient ID: " << patientId << "\n";
-    patientFile << "Name: " << name << "\n";
-    patientFile << "Age: " << age << "\n";
-    patientFile << "Blood Group: " << bloodGroup << "\n";
-    patientFile << "Vaccines Done: " << vaccinesDone << "\n";
-    patientFile << "Area of Treatment: " << areaOfTreatment << "\n";
-    patientFile << "Insurance: " << insurance << "\n";
-    patientFile << "Phone Number: " << phoneNumber << "\n";
-    patientFile << "Hospital Assigned: " << hospital_names[nearestHospital - 1] << "\n";
-
-    double optCost = (double)averageWeight * moneyFactor;
-    sprintf(buf, "%.2lf", optCost);
-    patientFile << "Optimal Cost: " << buf << " INR\n";
-
-    patientFile << "Severity: " << (float)severity << "\n";
-
-    double treatmentCost = (double)averageWeight * moneyFactor * (severity == 5 ? 2.0 : (severity == 4 ? 1.5 : (severity == 3 ? 1.2 : (severity == 2 ? 1.0 : 0.8))));
-    sprintf(buf, "%.2lf", treatmentCost);
-    patientFile << "Current_Treatment_Cost(INR): " << buf << "\n";
-    patientFile << "Total_expenditure(INR): " << buf << "\n";
-    patientFile << "-----------------\n";
-
-    patientFile.close();
     cout << "Patient details successfully recorded." << endl << endl;
     return true;
 }
@@ -573,48 +320,19 @@ void simulateAmbulanceMovement(const char *srcName, const char *destName, int st
     cout << "\nAmbulance has arrived at " << destName << "!" << endl << endl;
 }
 
-// Structure for ambulance
-struct Ambulance {
-    int id;
-    int location;    // 1-based hospital index
-    char status[16]; // e.g., "available", "busy"
-    int fuel;        // Fuel level in percentage (0-100)
-};
-
 #define MAX_AMBULANCES 20
 
 // Forward declarations
 void refuelAmbulance(Ambulance *ambulance);
-void updateAmbulanceStatus(int ambId, int newLocation, const char *newStatus, int newFuel, const char *filename);
+void updateAmbulanceStatus(int ambId, int newLocation, const char *newStatus, int newFuel);
 void displayAllAmbulances(Ambulance ambulances[], int ambCount, char hospital_names[15][50], int src, int weights[15][15]);
-int readAmbulances(Ambulance ambulances[], int maxAmb, const char *filename);
+int readAmbulances(Ambulance ambulances[], int maxAmb);
 int findNearestAmbulance(Ambulance ambulances[], int ambCount, int src, int weights[15][15]);
 void displayDispatchTimestamp(const char* event);
 
 
-// Read ambulances from file
-int readAmbulances(Ambulance ambulances[], int maxAmb, const char *filename) {
-    ifstream f(filename);
-    if (!f.is_open())
-        return 0;
-    string line;
-    int count = 0;
-    while (getline(f, line) && count < maxAmb) {
-        if (line.empty() || line[0] == '/' || line[0] == '\\' || line[0] == '\n')
-            continue;
-        int id, loc, fuel;
-        char status[16];
-        if (sscanf(line.c_str(), "%d,%d,%15[^,],%d", &id, &loc, status, &fuel) == 4) {
-            ambulances[count].id = id;
-            ambulances[count].location = loc;
-            strncpy(ambulances[count].status, status, 15);
-            ambulances[count].status[15] = '\0';
-            ambulances[count].fuel = fuel;
-            count++;
-        }
-    }
-    f.close();
-    return count;
+int readAmbulances(Ambulance ambulances[], int maxAmb) {
+    return database().getAmbulances(ambulances, maxAmb);
 }
 
 // Find nearest available ambulance to a given hospital
@@ -634,34 +352,18 @@ int findNearestAmbulance(Ambulance ambulances[], int ambCount, int src, int weig
     if (ambIdx != -1 && ambulances[ambIdx].fuel < MIN_FUEL_THRESHOLD * 2) {
         // If fuel is low but above minimum threshold, refuel before dispatch
         refuelAmbulance(&ambulances[ambIdx]);
-        updateAmbulanceStatus(ambulances[ambIdx].id,
-                             ambulances[ambIdx].location,
-                             "available",
-                             100,
-                             "ambulance_locations.txt");
+        updateAmbulanceStatus(ambulances[ambIdx].id, ambulances[ambIdx].location,
+                              "available", 100);
     }
 
     return ambIdx;
 }
 
-// Update ambulance status and location in file
-void updateAmbulanceStatus(int ambId, int newLocation, const char *newStatus, int newFuel, const char *filename) {
-    Ambulance ambulances[MAX_AMBULANCES];
-    int count = readAmbulances(ambulances, MAX_AMBULANCES, filename);
-    ofstream f(filename);
-    if (!f.is_open())
-        return;
-    f << "// Format: AmbulanceID,CurrentHospitalIndex,Status,FuelLevel" << endl;
-    for (int i = 0; i < count; ++i) {
-        if (ambulances[i].id == ambId) {
-            ambulances[i].location = newLocation;
-            strncpy(ambulances[i].status, newStatus, 15);
-            ambulances[i].status[15] = '\0';
-            ambulances[i].fuel = newFuel;
-        }
-        f << ambulances[i].id << "," << ambulances[i].location << "," << ambulances[i].status << "," << ambulances[i].fuel << endl;
-    }
-    f.close();
+void updateAmbulanceStatus(int ambId, int newLocation, const char *newStatus, int newFuel) {
+    char message[160];
+    snprintf(message, sizeof(message), "Ambulance %d status changed to %s at hospital %d", ambId, newStatus, newLocation);
+    if (!database().dispatchAmbulance(ambId, newLocation, newStatus, newFuel, "StatusUpdate", message))
+        cout << "Warning: Could not update ambulance in SQL Server." << endl;
 }
 
 // Display all ambulances and their locations, status, and estimated time to src
@@ -687,253 +389,32 @@ void displayAllAmbulances(Ambulance ambulances[], int ambCount, char hospital_na
 }
 
 Patient* searchPatientById(int id) {
-    ifstream file(FILENAME);
-    if (!file.is_open()) {
-        perror("Error opening patient_details.txt for search");
+    Patient* patient = new Patient{};
+    if (!database().getPatientById(id, *patient)) {
+        delete patient;
         return nullptr;
     }
-
-    char line[MAX_FIELD_LEN * 2];
-    Patient *foundPatient = nullptr;
-
-    while (file.getline(line, sizeof(line))) {
-        if (strstr(line, "Patient ID:")) {
-            int current_id;
-            sscanf(line, "Patient ID: %d", &current_id);
-
-            if (current_id == id) {
-                foundPatient = new Patient;
-                foundPatient->id = id;
-
-                // Initialize string fields to empty strings
-                foundPatient->name[0] = '\0';
-                foundPatient->bloodGroup[0] = '\0';
-                foundPatient->areaOfTreatment[0] = '\0';
-                foundPatient->insurance[0] = '\0';
-                foundPatient->phoneNumber[0] = '\0';
-                foundPatient->hospitalAssigned[0] = '\0';
-                foundPatient->vaccinesDone = ' ';
-
-                // Name
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Name: %[^\n]", foundPatient->name) != 1) {
-                        foundPatient->name[0] = '\0';
-                    }
-                } else { goto cleanup_error; }
-
-                // Age
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Age: %d", &foundPatient->age) != 1) {
-                        foundPatient->age = 0;
-                        cerr << "Warning: Could not parse age for ID " << id << ". Setting to 0." << endl;
-                    }
-                } else { goto cleanup_error; }
-
-                // Blood Group
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Blood Group: %[^\n]", foundPatient->bloodGroup) != 1) {
-                        foundPatient->bloodGroup[0] = '\0';
-                    }
-                } else { goto cleanup_error; }
-
-                // Vaccines Done
-                if (file.getline(line, sizeof(line))) {
-                    char temp_char;
-                    if (sscanf(line, "Vaccines Done: %c", &temp_char) == 1 &&
-                        (temp_char == 'Y' || temp_char == 'N' || temp_char == 'y' || temp_char == 'n')) {
-                        foundPatient->vaccinesDone = toupper(temp_char);
-                    } else {
-                        foundPatient->vaccinesDone = 'U';
-                        cerr << "Warning: Could not parse or validate Vaccines Done for ID " << id << ". Setting to 'U'." << endl;
-                    }
-                } else { goto cleanup_error; }
-
-                // Area of Treatment
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Area of Treatment: %[^\n]", foundPatient->areaOfTreatment) != 1) {
-                        foundPatient->areaOfTreatment[0] = '\0';
-                    }
-                } else { goto cleanup_error; }
-
-                // Insurance
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Insurance: %[^\n]", foundPatient->insurance) != 1) {
-                        foundPatient->insurance[0] = '\0';
-                    }
-                } else { goto cleanup_error; }
-
-                // Phone Number
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Phone Number: %[^\n]", foundPatient->phoneNumber) != 1) {
-                        foundPatient->phoneNumber[0] = '\0';
-                    }
-                } else { goto cleanup_error; }
-
-                // Hospital Assigned
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Hospital Assigned: %[^\n]", foundPatient->hospitalAssigned) != 1) {
-                        foundPatient->hospitalAssigned[0] = '\0';
-                    }
-                } else { goto cleanup_error; }
-
-                // Optimal Cost
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Optimal Cost: %lf INR", &foundPatient->optimalCost) != 1) {
-                        foundPatient->optimalCost = 0.0;
-                        cerr << "Warning: Could not parse Optimal Cost for ID " << id << ". Setting to 0.0." << endl;
-                    }
-                } else { goto cleanup_error; }
-
-                // Severity
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Severity: %f", &foundPatient->severity) != 1) {
-                        foundPatient->severity = 0.0f;
-                        cerr << "Warning: Could not parse Severity for ID " << id << ". Setting to 0.0." << endl;
-                    }
-                } else { goto cleanup_error; }
-
-                // Current_Treatment_Cost(INR)
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Current_Treatment_Cost(INR): %f", &foundPatient->current_treatment_cost) != 1) {
-                        foundPatient->current_treatment_cost = 0.0f;
-                        cerr << "Warning: Could not parse Current_Treatment_Cost(INR) for ID " << id << ". Setting to 0.0." << endl;
-                    }
-                } else { goto cleanup_error; }
-
-                // Total_expenditure(INR)
-                if (file.getline(line, sizeof(line))) {
-                    if (sscanf(line, "Total_expenditure(INR): %f", &foundPatient->total_expenditure) != 1) {
-                        foundPatient->total_expenditure = 0.0f;
-                        cerr << "Warning: Could not parse Total_expenditure(INR) for ID " << id << ". Setting to 0.0." << endl;
-                    }
-                } else { goto cleanup_error; }
-
-                // Read and verify the separator line
-                if (!file.getline(line, sizeof(line)) || strstr(line, "---") == nullptr) {
-                    cerr << "Warning: Missing or malformed separator for ID " << id << ". File format issue?" << endl;
-                    goto cleanup_error;
-                }
-
-                file.close();
-                return foundPatient;
-
-            cleanup_error:
-                delete foundPatient;
-                foundPatient = nullptr;
-                cerr << "Error reading complete record for ID " << id << ". Data might be incomplete." << endl;
-            }
-        }
-    }
-    file.close();
-    return nullptr; // Patient not found or error occurred
+    return patient;
 }
 
 // Function to update patient records
 bool updatePatientRecord(Patient *patient) {
-    ifstream file(FILENAME);
-    ofstream temp("temp.txt");
-    if (!file.is_open() || !temp.is_open()) {
-        perror("Error opening files for update");
-        if (file.is_open()) file.close();
-        if (temp.is_open()) temp.close();
-        return false;
-    }
-
-    char line[MAX_FIELD_LEN * 2];
-    bool found = false;
-    int line_count_in_record = 11;
-
-    while (file.getline(line, sizeof(line))) {
-        if (strstr(line, "Patient ID:")) {
-            int id_from_file;
-            sscanf(line, "Patient ID: %d", &id_from_file);
-
-            if (id_from_file == patient->id) {
-                found = true;
-                temp << "Patient ID: " << patient->id << "\n";
-                temp << "Name: " << patient->name << "\n";
-                temp << "Age: " << patient->age << "\n";
-                temp << "Blood Group: " << patient->bloodGroup << "\n";
-                temp << "Vaccines Done: " << patient->vaccinesDone << "\n";
-                temp << "Area of Treatment: " << patient->areaOfTreatment << "\n";
-                temp << "Insurance: " << patient->insurance << "\n";
-                temp << "Phone Number: " << patient->phoneNumber << "\n";
-                temp << "Hospital Assigned: " << patient->hospitalAssigned << "\n";
-                char buf[64];
-                sprintf(buf, "%.2lf", patient->optimalCost);
-                temp << "Optimal Cost: " << buf << " INR\n";
-                temp << "-----------------\n";
-
-                for (int i = 0; i < (line_count_in_record - 1); i++) {
-                    if (!file.getline(line, sizeof(line))) {
-                        cerr << "Warning: Unexpected EOF while skipping record lines." << endl;
-                        break;
-                    }
-                }
-            } else {
-                temp << line << "\n";
-                for (int i = 0; i < (line_count_in_record - 1); i++) {
-                    if (file.getline(line, sizeof(line))) {
-                        temp << line << "\n";
-                    } else {
-                        break;
-                    }
-                }
-            }
-        } else {
-            temp << line << "\n";
-        }
-    }
-
-    file.close();
-    temp.close();
-
-    if (found) {
-        remove(FILENAME);
-        rename("temp.txt", FILENAME);
-    } else {
-        remove("temp.txt");
-    }
-
-    return found;
+    return patient != nullptr && database().updatePatient(*patient);
 }
 
 // Function to generate statistics
 void generatePatientStatistics() {
-    ifstream file("patient_details.txt");
-    if (!file.is_open())
-        return;
-
-    int totalPatients = 0;
-    int vaccinated = 0;
-    int withInsurance = 0;
-    double totalCost = 0;
-
-    string line;
-    while (getline(file, line)) {
-        if (line.find("Patient ID:") != string::npos) {
-            totalPatients++;
-        } else if (line.find("Vaccines Done: y") != string::npos) {
-            vaccinated++;
-        } else if (line.find("Insurance: yes") != string::npos) {
-            withInsurance++;
-        } else if (line.find("Optimal Cost:") != string::npos) {
-            double cost;
-            sscanf(line.c_str(), "Optimal Cost: %lf", &cost);
-            totalCost += cost;
-        }
-    }
-
-    file.close();
+    PatientStatistics statistics{};
+    if (!database().getPatientStatistics(statistics)) return;
 
     cout << "\n=== Patient Statistics ===" << endl;
-    cout << "Total Patients: " << totalPatients << endl;
-    printf("Vaccinated Patients: %d (%.1f%%)\n", vaccinated,
-           totalPatients > 0 ? (vaccinated * 100.0 / totalPatients) : 0.0);
-    printf("Patients with Insurance: %d (%.1f%%)\n", withInsurance,
-           totalPatients > 0 ? (withInsurance * 100.0 / totalPatients) : 0.0);
+    cout << "Total Patients: " << statistics.totalPatients << endl;
+    printf("Vaccinated Patients: %d (%.1f%%)\n", statistics.vaccinated,
+           statistics.totalPatients > 0 ? (statistics.vaccinated * 100.0 / statistics.totalPatients) : 0.0);
+    printf("Patients with Insurance: %d (%.1f%%)\n", statistics.withInsurance,
+           statistics.totalPatients > 0 ? (statistics.withInsurance * 100.0 / statistics.totalPatients) : 0.0);
     printf("Average Cost per Patient: %.2f INR\n",
-           totalPatients > 0 ? (totalCost / totalPatients) : 0.0);
+           statistics.averageOptimalCost);
     cout << "=======================" << endl;
 }
 
@@ -947,148 +428,33 @@ double calculateHospitalScore(int distance, int rating) {
 }
 
 void saveFeedback(int hospitalNum, const char *feedback, int rating, char hospital_names[][50]) {
-    ifstream file("hospital_feedback.txt");
-    ofstream temp("temp_feedback.txt");
-    if (!file.is_open() || !temp.is_open()) {
-        cout << "Error opening feedback files." << endl;
-        return;
-    }
-
-    string line;
-    bool found = false;
-    bool inTargetHospital = false;
-
-    while (getline(file, line)) {
-        // Check if this is our target hospital's header
-        if (line.find(hospital_names[hospitalNum - 1]) != string::npos) {
-            inTargetHospital = true;
-            found = true;
-            temp << line << "\n";
-            // Add new feedback right after hospital name with a space
-            temp << "Rating: " << rating << " stars\n";
-            temp << "Feedback: \"" << feedback << "\"\n\n";
-            continue;
-        }
-
-        // If this is a feedback line and we're not adding new feedback
-        if (line.find("Feedback:") != string::npos) {
-            temp << line << "\n";
-            temp << "\n"; // Add space after existing feedback
-            continue;
-        }
-
-        // Write all other lines normally
-        temp << line << "\n";
-    }
-
-    if (!found) {
-        // If hospital not found, add new entry at end
-        temp << "\n" << hospital_names[hospitalNum - 1] << "\n";
-        temp << "Rating: " << rating << " stars\n";
-        temp << "Feedback: \"" << feedback << "\"\n\n";
-        temp << "-----------------------------------------------------\n";
-    }
-
-    file.close();
-    temp.close();
-
-    // Replace original file with temp file
-    remove("hospital_feedback.txt");
-    rename("temp_feedback.txt", "hospital_feedback.txt");
+    (void)hospital_names;
+    if (!database().addHospitalFeedback(hospitalNum, rating, feedback))
+        cout << "Error saving feedback to SQL Server." << endl;
 }
 
 void displayHospitalFeedback(int hospitalNum, char hospital_names[][50]) {
-    ifstream file("hospital_feedback.txt");
-    if (!file.is_open()) {
-        cout << "\n=== Feedback for " << hospital_names[hospitalNum - 1] << " ===" << endl;
-        cout << "Status: Not Rated" << endl;
-        cout << "No feedback available yet." << endl;
-        cout << "================================" << endl;
-        return;
-    }
-
-    string line;
-    bool found = false;
-    bool inTargetHospital = false;
-    int feedbackCount = 0;
-    double totalRating = 0;
-
     cout << "\n=== Feedback for " << hospital_names[hospitalNum - 1] << " ===" << endl;
-
-    while (getline(file, line)) {
-        // Check if this is our target hospital
-        if (line.find(hospital_names[hospitalNum - 1]) != string::npos) {
-            found = true;
-            inTargetHospital = true;
-            continue;
-        }
-
-        // Stop when we hit the next separator
-        if (inTargetHospital && line.find("-----------------------------------------------------") != string::npos) {
-            break;
-        }
-
-        // Process feedback and ratings
-        if (inTargetHospital && !line.empty()) {
-            if (line.find("Rating:") != string::npos) {
-                feedbackCount++;
-                int rating;
-                sscanf(line.c_str(), "Rating: %d", &rating);
-                totalRating += rating;
-                cout << "\nFeedback #" << feedbackCount << ":" << endl;
-            }
-            cout << line << endl;
-        }
-    }
-
-    if (!found || feedbackCount == 0) {
+    vector<FeedbackEntry> feedback;
+    if (!database().getHospitalFeedback(hospitalNum, feedback) || feedback.empty()) {
         cout << "Status: Not Rated" << endl;
         cout << "No feedback available yet." << endl;
     } else {
-        double averageRating = totalRating / feedbackCount;
+        for (size_t i = 0; i < feedback.size(); ++i) {
+            cout << "\nFeedback #" << i + 1 << ":" << endl;
+            cout << "Rating: " << feedback[i].rating << " stars" << endl;
+            cout << "Feedback: \"" << feedback[i].feedback << "\"" << endl;
+        }
+        double averageRating = database().getAverageHospitalFeedbackRating(hospitalNum);
         printf("\nAverage Rating: %.1f stars\n", averageRating);
-        cout << "Total Feedback Entries: " << feedbackCount << endl;
+        cout << "Total Feedback Entries: " << feedback.size() << endl;
     }
-
     cout << "================================" << endl;
-    file.close();
 }
 
 double calculateAverageFeedbackRating(int hospitalNum, char hospital_names[][50]) {
-    ifstream file("hospital_feedback.txt");
-    if (!file.is_open()) {
-        return 0.0;
-    }
-
-    string line;
-    bool inTargetHospital = false;
-    int totalRating = 0;
-    int feedbackCount = 0;
-
-    while (getline(file, line)) {
-        // Check if this is our target hospital
-        if (line.find(hospital_names[hospitalNum - 1]) != string::npos) {
-            inTargetHospital = true;
-            continue;
-        }
-
-        // Stop when we hit the next separator
-        if (inTargetHospital && line.find("-----------------------------------------------------") != string::npos) {
-            break;
-        }
-
-        // Count ratings while we're in the target hospital section
-        if (inTargetHospital && line.find("Rating:") != string::npos) {
-            int rating;
-            if (sscanf(line.c_str(), "Rating: %d", &rating) == 1) {
-                totalRating += rating;
-                feedbackCount++;
-            }
-        }
-    }
-
-    file.close();
-    return feedbackCount > 0 ? (double)totalRating / feedbackCount : 0.0;
+    (void)hospital_names;
+    return database().getAverageHospitalFeedbackRating(hospitalNum);
 }
 
 void refuelAmbulance(Ambulance *ambulance) {
@@ -1117,12 +483,12 @@ void refuelAmbulance(Ambulance *ambulance) {
     displayDispatchTimestamp(refuelMsg);
 }
 
-void setAmbulanceAvailableLater(int ambId, int hospital, const char *filename) {
+void setAmbulanceAvailableLater(int ambId, int hospital) {
     this_thread::sleep_for(chrono::seconds(AMBULANCE_BUSY_TIME));
 
-    // Read ambulances from file to get the correct fuel value
+    // Reload from SQL Server to get the current fuel value.
     Ambulance ambulances[MAX_AMBULANCES];
-    int ambCount = readAmbulances(ambulances, MAX_AMBULANCES, filename);
+    int ambCount = readAmbulances(ambulances, MAX_AMBULANCES);
     int fuel = 100; // Default if not found
 
     for (int i = 0; i < ambCount; ++i) {
@@ -1132,7 +498,7 @@ void setAmbulanceAvailableLater(int ambId, int hospital, const char *filename) {
         }
     }
 
-    updateAmbulanceStatus(ambId, hospital, "available", fuel, filename);
+    updateAmbulanceStatus(ambId, hospital, "available", fuel);
     cout << "Ambulance " << ambId << " is now available at " << hospital << endl;
 }
 
@@ -1148,14 +514,11 @@ void displayDispatchTimestamp(const char* event) {
     // Display to console
     cout << "\n[" << timestamp << "] " << event << endl;
 
-    // Save to file
-    ofstream timeline("ambulance_timeline.txt", ios::app);
-    if (timeline.is_open()) {
-        timeline << "[" << timestamp << "] " << event << endl;
-        timeline.close();
-    } else {
-        cout << "Warning: Could not save to timeline file." << endl;
-    }
+    int ambulanceId = 0;
+    if (sscanf(event, "Ambulance %d", &ambulanceId) != 1)
+        sscanf(event, "%*[^A]Ambulance %d", &ambulanceId);
+    if (!database().addTimelineEventAt(ambulanceId, "Dispatch", event, timestamp))
+        cout << "Warning: Could not save timeline event to SQL Server." << endl;
 }
 
 int main() {
@@ -1170,33 +533,17 @@ int main() {
     cout << "\n\nDYNAMIC AMBULANCE DISPATCH SYSTEM\n" << endl;
     cout << "Hospitals and Casualties data are obtained on " << asctime(localTime) << endl;
 
-    char matrix_file[128] = "matrix.txt";
-    char casualties_file[128] = "casualtiesMatrix.txt";
-    char weights_file[128] = "weights.txt";
-    char hospital_names_file[128] = "hospital_names.txt";
-
-    // Prompt for file paths
-    cout << "\n--- Data File Configuration ---" << endl;
-
-    // Need to clear any leftover from cin before getline calls
-    // (prompt_filepath uses getline)
-    prompt_filepath("Enter adjacency matrix file (.txt/.csv)", matrix_file, sizeof(matrix_file), "matrix.txt");
-    prompt_filepath("Enter casualties matrix file (.txt/.csv)", casualties_file, sizeof(casualties_file), "casualtiesMatrix.txt");
-    prompt_filepath("Enter weights matrix file (.txt/.csv)", weights_file, sizeof(weights_file), "weights.txt");
-    prompt_filepath("Enter hospital names file (.txt/.csv)", hospital_names_file, sizeof(hospital_names_file), "hospital_names.txt");
-    cout << "-------------------------------" << endl;
-
     int matrix[15][15];
     int casualtiesMatrix[15][15];
     int weights[15][15];
     char hospital_names[15][50];
     int moneyFactor = 500;
 
-    // Read matrices from files
-    readMatrixFromFile(matrix, matrix_file);
-    readMatrixFromFile(casualtiesMatrix, casualties_file);
-    readMatrixFromFile(weights, weights_file);
-    readHospitalNamesFromFile(hospital_names, hospital_names_file);
+    if (!database().connectFromEnvironment()) return 1;
+    if (!database().loadHospitalData(matrix, casualtiesMatrix, weights, hospital_names)) {
+        cout << "ERROR: Could not load hospital data from SQL Server." << endl;
+        return 1;
+    }
 
     Node** adjList = createAdjacencyList(hospitals, matrix, casualtiesMatrix, weights, hospital_names);
 
@@ -1268,7 +615,7 @@ int main() {
 
                 // Show all ambulances and their time delays BEFORE any hospital/casualty logic
                 Ambulance ambulances[MAX_AMBULANCES];
-                int ambCount = readAmbulances(ambulances, MAX_AMBULANCES, "ambulance_locations.txt");
+                int ambCount = readAmbulances(ambulances, MAX_AMBULANCES);
                 cout << "\n=== AMBULANCE LIST (before hospital selection) ===" << endl;
                 displayAllAmbulances(ambulances, ambCount, hospital_names, src, weights);
                 cout << "=== END OF AMBULANCE LIST ===" << endl << endl;
@@ -1355,25 +702,22 @@ int main() {
                         simulateAmbulanceMovement(hospital_names[src - 1], hospital_names[nearestHospital - 1], 30, 80);
                         int fuelUsed = (int)(averageWeight * 0.5);
                         ambulances[ambIdx].fuel = ambulances[ambIdx].fuel - fuelUsed;
-                        updateAmbulanceStatus(ambulances[ambIdx].id,
-                                             nearestHospital,
-                                             "busy",
-                                             ambulances[ambIdx].fuel,
-                                             "ambulance_locations.txt");
+                        updateAmbulanceStatus(ambulances[ambIdx].id, nearestHospital,
+                                              "busy", ambulances[ambIdx].fuel);
                         sprintf(dispatchMsg, "Ambulance %d arrived at %s",
                                 ambulances[ambIdx].id,
                                 hospital_names[nearestHospital - 1]);
                             (dispatchMsg);
                         cout << "Ambulance " << ambulances[ambIdx].id << " dispatched to Hospital " << hospital_names[nearestHospital - 1] << " with a delay of " << averageWeight << " seconds." << endl;
                         cout << "Remaining fuel: " << ambulances[ambIdx].fuel << "%" << endl;
-                        setAmbulanceAvailableLater(ambulances[ambIdx].id, nearestHospital, "ambulance_locations.txt");
+                        setAmbulanceAvailableLater(ambulances[ambIdx].id, nearestHospital);
                     } else {
                         cout << "No available ambulance could be dispatched!" << endl;
                     }
                     cout.flush();
 
                     // Show all ambulances and their time delays AFTER dispatch
-                    int ambCountAfter = readAmbulances(ambulances, MAX_AMBULANCES, "ambulance_locations.txt");
+                    int ambCountAfter = readAmbulances(ambulances, MAX_AMBULANCES);
                     cout << "\n=== AMBULANCE LIST (after dispatch) ===" << endl;
                     displayAllAmbulances(ambulances, ambCountAfter, hospital_names, src, weights);
                     cout << "=== END OF AMBULANCE LIST ===" << endl << endl;
@@ -1411,7 +755,7 @@ int main() {
 
                 // Show all ambulances and their time delays BEFORE hospital selection
                 Ambulance ambulances[MAX_AMBULANCES];
-                int ambCount = readAmbulances(ambulances, MAX_AMBULANCES, "ambulance_locations.txt");
+                int ambCount = readAmbulances(ambulances, MAX_AMBULANCES);
                 cout << "\n=== AMBULANCE LIST (before hospital selection) ===" << endl;
                 displayAllAmbulances(ambulances, ambCount, hospital_names, src, weights);
                 cout << "=== END OF AMBULANCE LIST ===" << endl << endl;
@@ -1641,11 +985,8 @@ int main() {
                             }
                             int fuelUsed = (int)(averageWeight * 0.5);
                             ambulances[ambIdx].fuel = ambulances[ambIdx].fuel - fuelUsed;
-                            updateAmbulanceStatus(ambulances[ambIdx].id,
-                                                 dest,
-                                                 "busy",
-                                                 ambulances[ambIdx].fuel,
-                                                 "ambulance_locations.txt");
+                            updateAmbulanceStatus(ambulances[ambIdx].id, dest,
+                                                  "busy", ambulances[ambIdx].fuel);
                             sprintf(dispatchMsg, "Ambulance %d completed transport to %s",
                                     ambulances[ambIdx].id,
                                     hospital_names[dest - 1]);
@@ -1655,13 +996,13 @@ int main() {
                                    hospital_names[dest - 1],
                                    averageWeight);
                             cout << "Remaining fuel: " << ambulances[ambIdx].fuel << "%" << endl;
-                            setAmbulanceAvailableLater(ambulances[ambIdx].id, dest, "ambulance_locations.txt");
+                            setAmbulanceAvailableLater(ambulances[ambIdx].id, dest);
                         } else {
                             cout << "No available ambulance could be dispatched!" << endl;
                         }
 
                         // Show all ambulances and their time delays AFTER dispatch
-                        int ambCountAfter = readAmbulances(ambulances, MAX_AMBULANCES, "ambulance_locations.txt");
+                        int ambCountAfter = readAmbulances(ambulances, MAX_AMBULANCES);
                         cout << "\n=== AMBULANCE LIST (after dispatch) ===" << endl;
                         displayAllAmbulances(ambulances, ambCountAfter, hospital_names, src, weights);
                         cout << "=== END OF AMBULANCE LIST ===" << endl << endl;
