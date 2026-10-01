@@ -1,0 +1,30 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Dependencies
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+*.exe
+*.o
+*.obj
+
+# Logs
+logs/
+*.log
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+*.suo
+*.user

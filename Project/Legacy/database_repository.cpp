@@ -240,7 +240,7 @@ bool DatabaseRepository::loadHospitalData(int matrix[HOSPITAL_COUNT][HOSPITAL_CO
         int id = 0; char name[50]{}; SQLLEN indicator = 0;
         SQLGetData(statement, 1, SQL_C_SLONG, &id, 0, &indicator);
         SQLGetData(statement, 2, SQL_C_CHAR, name, sizeof(name), &indicator);
-        if (id < 1 || id > HOSPITAL_COUNT) ok = false;
+        if (id < 1 || id > HOSPITAL_COUNT) continue;
         else { copyTo(hospitalNames[id - 1], 50, name); ++namesRead; }
     }
     SQLFreeHandle(SQL_HANDLE_STMT, statement);

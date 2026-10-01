@@ -1,0 +1,27 @@
+{
+  "name": "dynamic-ambulance-system",
+  "version": "1.0.0",
+  "description": "Dynamic Ambulance Dispatch System - Modernized Full-Stack EMS Platform",
+  "private": true,
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "start:backend": "npm --prefix backend start",
+    "build:frontend": "npm --prefix frontend run build",
+    "test:backend": "npm --prefix backend test",
+    "test:frontend": "npm --prefix frontend test",
+    "test:all": "npm run test:backend && npm run test:frontend",
+    "db:verify": "node backend/scripts/verifyDb.js",
+    "build:legacy": "g++ -std=c++17 -static -static-libgcc -static-libstdc++ hospital_final.cpp database_repository.cpp -lodbc32 -o hospital_mssql.exe",
+    "test:legacy": "g++ -std=c++17 test_hospital.cpp -o test_hospital.exe && .\\test_hospital.exe"
+  },
+  "keywords": [
+    "ems",
+    "ambulance",
+    "dispatch",
+    "healthcare",
+    "sql-server"
+  ],
+  "author": "",
+  "license": "ISC"
+}
