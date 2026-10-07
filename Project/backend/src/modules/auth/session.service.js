@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import env from '../../config/env.js';
-import logger from '../../utils/logger.js';
+import fleetStateStore from '../fleet/fleetState.store.js';
 
 // In-memory token revocation blacklist (keyed by jti or token with expiration timestamp)
 const revokedTokens = new Map();
@@ -78,22 +78,31 @@ export function verifySessionToken(token) {
   }
 }
 
-/**
- * Revokes a session token so it cannot be used again before its natural expiry.
- */
-export function invalidateSessionToken(token) {
-  try {
-    const decoded = jwt.decode(token);
-    const expMs = decoded?.exp ? decoded.exp * 1000 : Date.now() + (2 * 60 * 60 * 1000);
-    if (decoded?.jti) {
-      revokedTokens.set(decoded.jti, expMs);
-    }
-    revokedTokens.set(token, expMs);
-    return true;
-  } catch (err) {
-    logger.warn('Failed to decode token during invalidation:', err.message);
-    return false;
+const revocationKey = (token) => fleetStateStore.key('auth:revoked:' + crypto.createHash('sha256').update(token).digest('hex'));
+const requireRevocationStore = () => {
+  if (!fleetStateStore.isRedisReady()) throw Object.assign(new Error('Session verification storage is unavailable.'), { status: 503, code: 'AUTH_STATE_UNAVAILABLE' });
+};
+
+// Entry points use the shared check; per-event socket expiry checks remain local.
+export async function verifyActiveSessionToken(token) {
+  const verification = verifySessionToken(token);
+  if (!verification.valid) return verification;
+  requireRevocationStore();
+  if (await fleetStateStore.client.exists(revocationKey(token))) {
+    return { valid: false, error: 'Session has been revoked' };
   }
+  return verification;
+}
+
+/** Revocations survive backend restarts and are shared by API instances. */
+export async function invalidateSessionToken(token) {
+  const decoded = jwt.decode(token);
+  const expMs = decoded?.exp ? decoded.exp * 1000 : Date.now() + 2 * 60 * 60 * 1000;
+  if (decoded?.jti) revokedTokens.set(decoded.jti, expMs);
+  revokedTokens.set(token, expMs);
+  requireRevocationStore();
+  await fleetStateStore.client.set(revocationKey(token), '1', { PX: Math.max(1, expMs - Date.now()) });
+  return true;
 }
 
 /**
@@ -140,6 +149,7 @@ export function extractToken(req) {
 export default {
   createSessionToken,
   verifySessionToken,
+  verifyActiveSessionToken,
   invalidateSessionToken,
   attachSessionCookie,
   clearSessionCookie,

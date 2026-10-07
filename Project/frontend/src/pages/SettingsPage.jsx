@@ -9,7 +9,7 @@ export const SettingsPage = () => {
   const fetchHealth = async () => {
     setLoading(true);
     try {
-      const res = await healthService.getHealth();
+      const res = await healthService.getDetailedHealth();
       setHealth(res.data);
     } catch (err) {
       setHealth({ status: 'degraded', error: err.message });
@@ -64,11 +64,11 @@ export const SettingsPage = () => {
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
               <span className="text-slate-400">NODE RUNTIME:</span>
-              <span className="text-slate-200">{health?.system?.nodeVersion || 'v24.x (Backend)'}</span>
+              <span className="text-slate-200">{health?.system?.nodeVersion || 'Unavailable'}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
               <span className="text-slate-400">PLATFORM:</span>
-              <span className="text-slate-200">{health?.system?.platform || 'win32'}</span>
+              <span className="text-slate-200">{health?.system?.platform || 'Unavailable'}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
               <span className="text-slate-400">UPTIME:</span>
@@ -76,7 +76,7 @@ export const SettingsPage = () => {
             </div>
             <div className="flex justify-between py-1.5">
               <span className="text-slate-400">HEAP MEMORY:</span>
-              <span className="text-slate-200">{health?.system?.memoryUsageMb || 0} MB</span>
+              <span className="text-slate-200">{health?.system?.memoryUsageMb ?? '--'} MB</span>
             </div>
           </div>
         </div>
@@ -91,11 +91,11 @@ export const SettingsPage = () => {
           <div className="space-y-3 text-xs font-mono">
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
               <span className="text-slate-400">TARGET DATABASE:</span>
-              <span className="text-emerald-400 font-bold">{health?.database?.database || 'DynamicAmbulanceDispatch'}</span>
+              <span className="text-emerald-400 font-bold">{health?.database?.database || 'Unavailable'}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
               <span className="text-slate-400">SERVER INSTANCE:</span>
-              <span className="text-white">{health?.database?.server || 'localhost\\SQLEXPRESS'}</span>
+              <span className="text-white">{health?.database?.server || 'Unavailable'}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
               <span className="text-slate-400">CONNECTION STATUS:</span>
@@ -109,11 +109,11 @@ export const SettingsPage = () => {
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
               <span className="text-slate-400">LEGACY C++ COMPATIBILITY:</span>
-              <span className="text-emerald-400">100% PRESERVED</span>
+              <span className="text-slate-200">See verified compatibility report</span>
             </div>
             <div className="flex justify-between py-1.5">
               <span className="text-slate-400">SCHEMA MODIFICATIONS:</span>
-              <span className="text-blue-400">ZERO (READ-ONLY INSPECTION)</span>
+              <span className="text-blue-400">Additive migrations 001-007</span>
             </div>
           </div>
         </div>

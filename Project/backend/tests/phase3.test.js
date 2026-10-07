@@ -10,6 +10,11 @@ import ServiceZone from '../src/modules/zones/zone.model.js';
 import sessionService from '../src/modules/auth/session.service.js';
 import bcrypt from 'bcrypt';
 
+async function clearFleetHistory(id) {
+  for (const table of ['FleetDispatchOutbox', 'AmbulanceOperationalEvents', 'AmbulanceLocationHistory'])
+    await sequelize.query('DELETE FROM dbo.' + table + ' WHERE ambulance_id = :id', { replacements: { id } });
+}
+
 describe('Phase 3 Core Data Management API Tests', () => {
   let adminUser, dispatcherUser, crewUser, hospitalUser;
   let adminToken, dispatcherToken, crewToken, hospitalToken;
@@ -24,6 +29,7 @@ describe('Phase 3 Core Data Management API Tests', () => {
     await Emergency.destroy({ where: { location_address: '100 Feet Road, Indiranagar, Bengaluru' } });
     const priorAmbs = await Ambulance.findAll({ where: { fleet_code: 'AMB-TEST-99' } });
     for (const amb of priorAmbs) {
+      await clearFleetHistory(amb.AmbulanceID);
       await AmbulanceTimeline.destroy({ where: { AmbulanceID: amb.AmbulanceID } });
       await amb.destroy();
     }
@@ -97,6 +103,7 @@ describe('Phase 3 Core Data Management API Tests', () => {
       await ServiceZone.destroy({ where: { id: createdZoneId } });
     }
     if (createdAmbulanceId) {
+      await clearFleetHistory(createdAmbulanceId);
       await AmbulanceTimeline.destroy({ where: { AmbulanceID: createdAmbulanceId } });
       await Ambulance.destroy({ where: { AmbulanceID: createdAmbulanceId } });
     }
@@ -351,6 +358,8 @@ describe('Phase 3 Core Data Management API Tests', () => {
       expect(res.body.data.assigned_hospital_id).toBeNull();
 
       createdEmergencyId = res.body.data.id;
+      const [createdEvents] = await sequelize.query("SELECT event_type, to_status FROM dbo.EmergencyEvents WHERE emergency_id = :id", { replacements: { id: createdEmergencyId } });
+      expect(createdEvents).toEqual([{ event_type: 'CREATED', to_status: 'REPORTED' }]);
     });
 
     it('POST /api/v1/emergencies validates severity range (1 to 5)', async () => {
@@ -474,7 +483,7 @@ describe('Phase 3 Core Data Management API Tests', () => {
   // =========================================================================
   describe('System Overview & Legacy Preservation', () => {
     it('GET /api/v1/overview returns updated telemetry with Phase 3 entities', async () => {
-      const res = await request(app).get('/api/v1/overview');
+      const res = await request(app).get('/api/v1/overview').set('Authorization', `Bearer ${dispatcherToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);

@@ -1,0 +1,7 @@
+{
+  "incident_id": 177,
+  "ambulance_id": 86,
+  "status": "EN_ROUTE",
+  "recommendation_id": 54,
+  "is_live_gps": true
+}

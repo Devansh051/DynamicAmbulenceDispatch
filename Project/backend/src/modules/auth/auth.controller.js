@@ -38,7 +38,7 @@ export const googleLogin = async (req, res, next) => {
 export const logout = async (req, res, next) => {
   try {
     if (req.token) {
-      sessionService.invalidateSessionToken(req.token);
+      await sessionService.invalidateSessionToken(req.token);
     }
     sessionService.clearSessionCookie(res);
 

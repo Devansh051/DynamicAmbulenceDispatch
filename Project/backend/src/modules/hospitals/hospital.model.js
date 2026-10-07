@@ -182,7 +182,7 @@ export const Hospital = sequelize.define('Hospital', {
   hooks: {
     beforeValidate: async (hospital) => {
       if (!hospital.HospitalID) {
-        const [result] = await sequelize.query('SELECT COALESCE(MAX(HospitalID), 0) + 1 AS nextId FROM dbo.Hospitals');
+        const [result] = await sequelize.query('SELECT NEXT VALUE FOR dbo.HospitalIdSequence AS nextId');
         hospital.HospitalID = result[0]?.nextId || 1;
       }
       if (!hospital.legacy_id) {

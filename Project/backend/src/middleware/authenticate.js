@@ -14,7 +14,7 @@ export async function authenticate(req, res, next) {
       return res.status(401).json(formatError('Authentication required. No session token provided.', 'UNAUTHENTICATED'));
     }
 
-    const verification = sessionService.verifySessionToken(token);
+    const verification = await sessionService.verifyActiveSessionToken(token);
     if (!verification.valid) {
       const code = verification.expired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN';
       return res.status(401).json(formatError(verification.error || 'Invalid session token', code));

@@ -51,6 +51,7 @@ public:
     double getAverageHospitalFeedbackRating(int hospitalId);
 
 private:
+    bool phase5FleetManaged_;
     SQLHENV environment_;
     SQLHDBC connection_;
 

@@ -29,6 +29,9 @@ describe('Phase 4 Targeted Regression Test Suite: All 10 Identified Issues', () 
 
   const cleanTestData = async () => {
     try {
+      for (const table of ['FleetDispatchOutbox', 'AmbulanceOperationalEvents', 'AmbulanceLocationHistory']) {
+        await sequelize.query('DELETE FROM dbo.' + table + " WHERE ambulance_id IN (SELECT AmbulanceID FROM dbo.Ambulances WHERE fleet_code IN ('REG-AMB-01', 'REG-AMB-02'))");
+      }
       await sequelize.query(`
         DELETE FROM dbo.AmbulanceTimeline 
         WHERE AmbulanceID IN (SELECT AmbulanceID FROM dbo.Ambulances WHERE fleet_code IN ('REG-AMB-01', 'REG-AMB-02'));
@@ -58,8 +61,8 @@ describe('Phase 4 Targeted Regression Test Suite: All 10 Identified Issues', () 
         DELETE FROM dbo.HospitalSyncHistory 
         WHERE sync_id LIKE 'sync-stale-%';
       `);
-    } catch (e) {
-      // ignore
+    } catch (error) {
+      throw new Error("Regression fixture cleanup failed: " + error.message);
     }
   };
 
@@ -189,9 +192,9 @@ describe('Phase 4 Targeted Regression Test Suite: All 10 Identified Issues', () 
 
       // VERIFIED -> DISPATCHED
       const res2 = await request(app)
-        .patch(`/api/v1/emergencies/${testEmergency.id}/status`)
+        .post(`/api/v1/emergencies/${testEmergency.id}/assign`)
         .set('Authorization', `Bearer ${dispatcherToken}`)
-        .send({ status: EMERGENCY_STATUS.DISPATCHED, ambulance_id: testAmbulance1.AmbulanceID });
+        .send({ ambulance_id: testAmbulance1.AmbulanceID });
       expect(res2.status).toBe(200);
       expect(res2.body.data.status).toBe(EMERGENCY_STATUS.DISPATCHED);
 
@@ -685,7 +688,7 @@ describe('Phase 4 Targeted Regression Test Suite: All 10 Identified Issues', () 
 
       expect(res.status).toBe(409);
       const errMsg = res.body.error?.message || res.body.message;
-      expect(errMsg).toMatch(/already assigned or currently unavailable|already assigned to active emergency/i);
+      expect(errMsg).toMatch(/already assigned or currently unavailable|already assigned to active emergency|no longer available/i);
 
       await Emergency.destroy({ where: { id: secondEmergency.id } });
     });
@@ -711,7 +714,7 @@ describe('Phase 4 Targeted Regression Test Suite: All 10 Identified Issues', () 
 
       const updated = await emergencyService.updateEmergencyStatus(
         dispatchEmergency.id,
-        EMERGENCY_STATUS.CANCELLED,
+        { status: EMERGENCY_STATUS.CANCELLED, notes: 'Test cancellation confirmed by dispatcher.' },
         dispatcherUser
       );
 

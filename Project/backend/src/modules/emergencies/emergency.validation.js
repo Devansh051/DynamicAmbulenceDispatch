@@ -1,6 +1,8 @@
 import { EMERGENCY_STATUS, EMERGENCY_TYPES } from './emergency.model.js';
 
 export const validateCreateEmergency = (req) => {
+  if (req.body.is_simulated !== undefined && typeof req.body.is_simulated !== 'boolean') return 'is_simulated must be a boolean';
+  if (req.body.is_simulated && req.body.patient_id) return 'Simulated incidents cannot reference operational patient records';
   const { emergency_type, severity, location_address, latitude, longitude, patient_id } = req.body;
 
   if (!location_address || !location_address.trim()) {

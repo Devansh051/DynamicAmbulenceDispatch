@@ -7,6 +7,10 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "simulator": "node scripts/runFleetSimulator.js",
+    "worker:fleet": "node scripts/runFleetPersistenceWorker.js",
+    "demo:setup": "node scripts/setupFleetDemo.js",
+    "demo:verify": "node scripts/verifyFleetDemo.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --detectOpenHandles"
   },
   "dependencies": {
@@ -19,7 +23,9 @@
     "express-rate-limit": "^8.7.0",
     "google-auth-library": "^11.1.0",
     "jsonwebtoken": "^9.0.3",
+    "redis": "^4.7.0",
     "sequelize": "^6.37.5",
+    "socket.io": "^4.8.1",
     "tedious": "^18.3.0"
   },
   "devDependencies": {

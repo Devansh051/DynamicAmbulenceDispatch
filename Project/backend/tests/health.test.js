@@ -23,6 +23,15 @@ describe('Health API', () => {
     expect(response.body.data).toHaveProperty('uptimeSeconds');
     expect(response.body.data).toHaveProperty('database');
     expect(response.body.meta).toHaveProperty('timestamp');
+    expect(response.body.data.database).not.toHaveProperty('server');
+    expect(response.body.data.database).not.toHaveProperty('database');
+    expect(response.body.data.database).not.toHaveProperty('counts');
+    expect(response.body.data).not.toHaveProperty('system');
+  });
+
+  test('detailed infrastructure health requires authentication', async () => {
+    expect((await request(app).get('/api/health/details')).status).toBe(401);
+    expect((await request(app).get('/api/v1/overview')).status).toBe(401);
   });
 
   test('GET /api/v1/health returns health structure on versioned path', async () => {

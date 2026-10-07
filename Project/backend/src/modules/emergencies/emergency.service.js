@@ -10,11 +10,14 @@ import auditService, { recordAuditEvent, AUDIT_EVENTS } from '../audit/audit.ser
 import googleMapsService from '../hospitals/googleMaps.service.js';
 import otpService from '../otp/otp.service.js';
 import sequelize from '../../config/database.js';
+import env from '../../config/env.js';
 import logger from '../../utils/logger.js';
 import dispatchEngineService from '../dispatch/dispatchEngine.service.js';
 import idempotencyService from '../dispatch/idempotency.service.js';
 import DispatchRecommendation from '../dispatch/dispatchRecommendation.model.js';
 import EmergencyEvent, { EMERGENCY_EVENT_TYPES } from './emergencyEvent.model.js';
+import fleetTrackerService from '../fleet/fleetTracker.service.js';
+import { hasValidCoordinates } from '../../utils/coordinates.js';
 import {
   LIFECYCLE_TRANSITIONS,
   isValidTransition,
@@ -35,6 +38,23 @@ export const isValidEmergencyStatusTransition = (fromStatus, toStatus) => {
 
 export const getAllowedEmergencyTransitions = (fromStatus) => {
   return getNextAllowedTransitions(fromStatus);
+};
+
+const fleetStatusForEmergency = (status) => ({
+  [EMERGENCY_STATUS.DISPATCHED]: 'ASSIGNED',
+  [EMERGENCY_STATUS.EN_ROUTE]: 'EN_ROUTE_TO_SCENE',
+  [EMERGENCY_STATUS.AT_PATIENT]: 'ARRIVED_AT_SCENE',
+  [EMERGENCY_STATUS.TRANSPORTING]: 'TRANSPORTING',
+  [EMERGENCY_STATUS.AT_HOSPITAL]: 'ARRIVED_AT_HOSPITAL',
+  [EMERGENCY_STATUS.RESOLVED]: 'AVAILABLE',
+  [EMERGENCY_STATUS.CLOSED]: 'AVAILABLE',
+  [EMERGENCY_STATUS.CANCELLED]: 'AVAILABLE'
+}[status] || 'ASSIGNED');
+
+const syncFleetState = (payload) => {
+  fleetTrackerService.syncOperationalState(payload).catch((error) => {
+    logger.warn(`Fleet state synchronization deferred: ${error.message}`);
+  });
 };
 
 class EmergencyService {
@@ -119,8 +139,9 @@ class EmergencyService {
     };
   }
 
-  async getEmergencyById(id) {
+  async getEmergencyById(id, transaction = null) {
     const emergency = await Emergency.findByPk(id, {
+      transaction,
       include: [
         {
           model: Patient,
@@ -197,16 +218,24 @@ class EmergencyService {
       const emergency = await Emergency.create({
         incident_code: incident_code || undefined,
         patient_id: patient_id || null,
+        is_simulated: data.is_simulated === true,
         reported_by_user_id: user.id,
         emergency_type: emergency_type.toUpperCase(),
         severity: parseInt(severity, 10),
         description: description || null,
         location_address: location_address.trim(),
-        latitude: latitude || null,
-        longitude: longitude || null,
+        latitude: latitude ?? null,
+        longitude: longitude ?? null,
         status: EMERGENCY_STATUS.REPORTED,
         assigned_ambulance_id: null,
         assigned_hospital_id: null
+      }, { transaction });
+
+      await EmergencyEvent.create({
+        emergency_id: emergency.id,
+        user_id: user.id,
+        event_type: EMERGENCY_EVENT_TYPES.CREATED,
+        to_status: EMERGENCY_STATUS.REPORTED
       }, { transaction });
 
       // Atomic security audit record (sanitized, no sensitive patient data)
@@ -231,7 +260,7 @@ class EmergencyService {
       await transaction.commit();
       return this.getEmergencyById(emergency.id);
     } catch (err) {
-      await transaction.rollback();
+      if (!transaction.finished) await transaction.rollback();
       throw err;
     }
   }
@@ -267,6 +296,10 @@ class EmergencyService {
         err.code = 'INVALID_PATIENT_REFERENCE';
         throw err;
       }
+    }
+
+    if (status !== undefined && status !== emergency.status) {
+      throw Object.assign(new Error('Use the incident status endpoint for lifecycle changes.'), { status: 400, code: 'USE_LIFECYCLE_ENDPOINT' });
     }
 
     // State machine transition validation
@@ -323,7 +356,7 @@ class EmergencyService {
       await transaction.commit();
       return this.getEmergencyById(emergency.id);
     } catch (err) {
-      await transaction.rollback();
+      if (!transaction.finished) await transaction.rollback();
       throw err;
     }
   }
@@ -351,92 +384,7 @@ class EmergencyService {
       }
     }
 
-    const emergency = await Emergency.findByPk(id);
-    if (!emergency) {
-      const err = new Error(`Emergency incident with ID '${id}' not found`);
-      err.status = 404;
-      err.code = 'EMERGENCY_NOT_FOUND';
-      throw err;
-    }
-
-    if (!status) {
-      const err = new Error('status is required to update emergency status.');
-      err.status = 400;
-      err.code = 'STATUS_REQUIRED';
-      throw err;
-    }
-
-    const prevStatus = emergency.status;
-    const newStatus = status.toUpperCase();
-
-    // State machine transition validation
-    if (newStatus !== prevStatus && !isValidEmergencyStatusTransition(prevStatus, newStatus)) {
-      const allowed = getAllowedEmergencyTransitions(prevStatus);
-      const err = new Error(
-        `Invalid status transition from '${prevStatus}' to '${newStatus}'. Permitted transitions: ${allowed.length ? allowed.join(', ') : 'None (Terminal state)'}`
-      );
-      err.status = 400;
-      err.code = 'INVALID_STATUS_TRANSITION';
-      throw err;
-    }
-
-    const transaction = await sequelize.transaction();
-    try {
-      emergency.status = newStatus;
-
-      // Handle resolution timestamp
-      if (['RESOLVED', 'CLOSED', 'CANCELLED'].includes(newStatus)) {
-        if (!emergency.resolved_at) {
-          emergency.resolved_at = new Date();
-        }
-      }
-
-      // Dedicated resolution notes field - never append to description!
-      if (resolution_notes !== undefined) {
-        emergency.resolution_notes = resolution_notes;
-      }
-
-      // If cancelled or closed and an ambulance was assigned, release ambulance back to available
-      if (['CANCELLED', 'CLOSED'].includes(newStatus) && emergency.assigned_ambulance_id) {
-        const amb = await Ambulance.findByPk(emergency.assigned_ambulance_id, { transaction });
-        if (amb) {
-          amb.Status = toDatabaseAmbulanceStatus('available');
-          await amb.save({ transaction });
-
-          await AmbulanceTimeline.create({
-            AmbulanceID: amb.AmbulanceID,
-            EventType: 'StatusTransition',
-            Message: `Ambulance #${amb.AmbulanceID} released back to available following Emergency #${emergency.incident_code} transition to ${newStatus}`
-          }, { transaction });
-        }
-      }
-
-      await emergency.save({ transaction });
-
-      // Atomic audit trail logging
-      await auditService.recordAuditEvent({
-        userId: user.id,
-        eventType: AUDIT_EVENTS.EMERGENCY_STATUS_CHANGED,
-        details: {
-          action: 'STATUS_TRANSITION',
-          incident_code: emergency.incident_code,
-          emergency_id: emergency.id,
-          from_status: prevStatus,
-          to_status: newStatus,
-          resolution_notes: resolution_notes || undefined,
-          has_resolution_notes: Boolean(resolution_notes),
-          changed_by: user.name,
-          actor_role: user.role
-        },
-        transaction
-      });
-
-      await transaction.commit();
-      return this.getEmergencyById(emergency.id);
-    } catch (err) {
-      await transaction.rollback();
-      throw err;
-    }
+    return this.updateResponseLifecycleStatus(id, { ...(typeof statusArg === 'object' ? statusArg : {}), status, resolution_notes }, user);
   }
 
   /**
@@ -446,8 +394,8 @@ class EmergencyService {
   async getDispatchRecommendations(id) {
     const emergency = await this.getEmergencyById(id);
 
-    const emgLat = emergency.latitude ? parseFloat(emergency.latitude) : null;
-    const emgLng = emergency.longitude ? parseFloat(emergency.longitude) : null;
+    const emgLat = emergency.latitude !== null && emergency.latitude !== undefined ? parseFloat(emergency.latitude) : null;
+    const emgLng = emergency.longitude !== null && emergency.longitude !== undefined ? parseFloat(emergency.longitude) : null;
 
     // 1. Find all fleet ambulances
     const allAmbulances = await Ambulance.findAll({
@@ -484,16 +432,16 @@ class EmergencyService {
 
       if (isAvailable && !isAssigned && hasFuel) {
         // Resolve GPS location
-        let ambLat = amb.current_location_lat ? parseFloat(amb.current_location_lat) : null;
-        let ambLng = amb.current_location_lng ? parseFloat(amb.current_location_lng) : null;
+        let ambLat = hasValidCoordinates(amb.current_location_lat, amb.current_location_lng) ? parseFloat(amb.current_location_lat) : null;
+        let ambLng = hasValidCoordinates(amb.current_location_lat, amb.current_location_lng) ? parseFloat(amb.current_location_lng) : null;
 
-        if ((!ambLat || !ambLng) && amb.currentHospital && amb.currentHospital.latitude && amb.currentHospital.longitude) {
+        if (!hasValidCoordinates(ambLat, ambLng) && amb.currentHospital && hasValidCoordinates(amb.currentHospital.latitude, amb.currentHospital.longitude)) {
           ambLat = parseFloat(amb.currentHospital.latitude);
           ambLng = parseFloat(amb.currentHospital.longitude);
         }
 
         let routeEstimate = null;
-        if (emgLat && emgLng && ambLat && ambLng) {
+        if (hasValidCoordinates(emgLat, emgLng) && hasValidCoordinates(ambLat, ambLng)) {
           routeEstimate = googleMapsService.calculateHaversineDistanceAndTime(
             { lat: ambLat, lng: ambLng },
             { lat: emgLat, lng: emgLng }
@@ -546,7 +494,7 @@ class EmergencyService {
 
     const recommendedHospitals = hospitals.map(h => {
       let routeEstimate = null;
-      if (emgLat && emgLng && h.latitude && h.longitude) {
+      if (hasValidCoordinates(emgLat, emgLng) && hasValidCoordinates(h.latitude, h.longitude)) {
         routeEstimate = googleMapsService.calculateHaversineDistanceAndTime(
           { lat: emgLat, lng: emgLng },
           { lat: parseFloat(h.latitude), lng: parseFloat(h.longitude) }
@@ -645,136 +593,13 @@ class EmergencyService {
       throw err;
     }
 
-    const emergency = await Emergency.findByPk(emergencyId);
-    if (!emergency) {
-      const err = new Error(`Emergency incident #${emergencyId} not found.`);
-      err.status = 404;
-      err.code = 'EMERGENCY_NOT_FOUND';
-      throw err;
-    }
-
-    // Verify status allows dispatch
-    if (emergency.status === EMERGENCY_STATUS.REPORTED) {
-      // Auto-verify as part of dispatch workflow if in REPORTED
-      emergency.status = EMERGENCY_STATUS.VERIFIED;
-    } else if (emergency.status !== EMERGENCY_STATUS.VERIFIED) {
-      const err = new Error(`Emergency #${emergency.incident_code} cannot be dispatched from '${emergency.status}' status. Incident must be VERIFIED.`);
-      err.status = 400;
-      err.code = 'INVALID_STATUS_TRANSITION';
-      throw err;
-    }
-
-    // Verify OTP if OTP confirmation was initiated
     if (otpService.hasPendingOtp(emergencyId)) {
-      if (!otp) {
-        const err = new Error('6-digit dispatch confirmation OTP is required.');
-        err.status = 400;
-        err.code = 'OTP_REQUIRED';
-        throw err;
-      }
-      const otpCheck = otpService.verifyDispatchOtp(emergencyId, otp);
-      if (!otpCheck.valid) {
-        const err = new Error(otpCheck.message);
-        err.status = 400;
-        err.code = otpCheck.reason;
-        throw err;
+      const verification = otpService.verifyDispatchOtp(emergencyId, otp);
+      if (!verification.valid) {
+        throw Object.assign(new Error(verification.message), { status: 400, code: verification.reason });
       }
     }
-
-    const transaction = await sequelize.transaction();
-    try {
-      // Concurrency check: Ensure ambulance is NOT already assigned to an active emergency
-      const activeAssignment = await Emergency.findOne({
-        where: {
-          assigned_ambulance_id: ambulance_id,
-          status: { [Op.in]: [EMERGENCY_STATUS.REPORTED, EMERGENCY_STATUS.VERIFIED, EMERGENCY_STATUS.DISPATCHED, EMERGENCY_STATUS.EN_ROUTE] },
-          id: { [Op.ne]: emergency.id }
-        },
-        transaction
-      });
-
-      if (activeAssignment) {
-        const err = new Error(`Ambulance #${ambulance_id} is already assigned to active emergency #${activeAssignment.incident_code}. Concurrency check failed.`);
-        err.status = 409;
-        err.code = 'AMBULANCE_ALREADY_ASSIGNED';
-        throw err;
-      }
-
-      // Check ambulance eligibility
-      const ambulance = await Ambulance.findByPk(ambulance_id, { transaction });
-      if (!ambulance || !ambulance.is_active) {
-        const err = new Error(`Ambulance #${ambulance_id} does not exist or is inactive.`);
-        err.status = 400;
-        err.code = 'INVALID_AMBULANCE';
-        throw err;
-      }
-
-      if ((ambulance.Fuel || 0) < 20) {
-        const err = new Error(`Ambulance #${ambulance_id} has insufficient fuel (${ambulance.Fuel}%). Minimum 20% required for dispatch.`);
-        err.status = 400;
-        err.code = 'INSUFFICIENT_FUEL';
-        throw err;
-      }
-
-      if (!isAmbulanceAvailable(ambulance.Status)) {
-        const err = new Error(`Ambulance #${ambulance_id} status is '${ambulance.Status}' and cannot be dispatched.`);
-        err.status = 409;
-        err.code = 'AMBULANCE_UNAVAILABLE';
-        throw err;
-      }
-
-      // Check target hospital if specified
-      let targetHospitalId = hospital_id || ambulance.CurrentHospitalID;
-      if (hospital_id) {
-        const hospital = await Hospital.findByPk(hospital_id, { transaction });
-        if (!hospital) {
-          const err = new Error(`Hospital #${hospital_id} does not exist.`);
-          err.status = 400;
-          err.code = 'INVALID_HOSPITAL';
-          throw err;
-        }
-      }
-
-      // Apply assignments atomically
-      emergency.assigned_ambulance_id = ambulance.AmbulanceID;
-      emergency.assigned_hospital_id = targetHospitalId;
-      emergency.status = EMERGENCY_STATUS.DISPATCHED;
-      await emergency.save({ transaction });
-
-      // Mark ambulance as busy (lowercase for C++ binary compatibility)
-      ambulance.Status = toDatabaseAmbulanceStatus('busy');
-      await ambulance.save({ transaction });
-
-      // Timeline log matching legacy C++ dispatch schema
-      await AmbulanceTimeline.create({
-        AmbulanceID: ambulance.AmbulanceID,
-        EventType: 'Dispatched',
-        Message: `Dispatched to Emergency #${emergency.incident_code} (Severity: ${emergency.severity}) at ${emergency.location_address} by ${user.name} (${user.role})`
-      }, { transaction });
-
-      // Security audit record
-      await recordAuditEvent({
-        userId: user.id,
-        eventType: AUDIT_EVENTS.EMERGENCY_DISPATCHED,
-        details: {
-          action: 'ASSIGN_AND_DISPATCH',
-          incident_code: emergency.incident_code,
-          emergency_id: emergency.id,
-          ambulance_id: ambulance.AmbulanceID,
-          fleet_code: ambulance.fleet_code,
-          hospital_id: targetHospitalId,
-          dispatched_by: user.name,
-          actor_role: user.role
-        },
-        transaction
-      });
-
-      await transaction.commit();
-      return this.getEmergencyById(emergency.id);
-    } catch (err) {
-      await transaction.rollback();
-      throw err;
-    }
+    return this.assignAmbulance(emergencyId, { ambulance_id, hospital_id }, user);
   }
 
   // =========================================================================
@@ -829,7 +654,7 @@ class EmergencyService {
       await transaction.commit();
       return recResult;
     } catch (err) {
-      await transaction.rollback();
+      if (!transaction.finished) await transaction.rollback();
       throw err;
     }
   }
@@ -839,6 +664,9 @@ class EmergencyService {
    */
   async recalculateRecommendations(emergencyId, user) {
     const emergency = await this.getEmergencyById(emergencyId);
+    if (!['REPORTED', 'VERIFIED', 'DISPATCH_RECOMMENDED'].includes(emergency.status)) {
+      throw Object.assign(new Error('Recommendations can only be recalculated for an unassigned incident.'), { status: 400, code: 'INVALID_EMERGENCY_STATUS' });
+    }
 
     const transaction = await sequelize.transaction();
     try {
@@ -861,7 +689,7 @@ class EmergencyService {
       await transaction.commit();
       return recResult;
     } catch (err) {
-      await transaction.rollback();
+      if (!transaction.finished) await transaction.rollback();
       throw err;
     }
   }
@@ -962,19 +790,23 @@ class EmergencyService {
     }
 
     // 1. Duplicate-Action Idempotency Protection
+    const transaction = await sequelize.transaction();
+    try {
     const key = idempotencyKey || data.idempotency_key;
     if (key) {
       const cached = await idempotencyService.checkIdempotency(
         key,
         `/api/v1/emergencies/${emergencyId}/assign`,
-        { ambulance_id, hospital_id, recommendation_id, override_reason }
+        { ambulance_id, hospital_id, recommendation_id, override_reason },
+        user.id, transaction
       );
       if (cached.isCached) {
+        await transaction.commit();
         return cached.body;
       }
     }
 
-    const emergency = await Emergency.findByPk(emergencyId);
+    const emergency = await Emergency.findByPk(emergencyId, { transaction });
     if (!emergency) {
       const err = new Error(`Emergency incident #${emergencyId} not found.`);
       err.status = 404;
@@ -1004,7 +836,16 @@ class EmergencyService {
       recommendation = await DispatchRecommendation.findByPk(emergency.current_recommendation_id);
     }
 
+    if (recommendation_id && !recommendation) {
+      throw Object.assign(new Error('Recommendation not found.'), { status: 404, code: 'RECOMMENDATION_NOT_FOUND' });
+    }
+    if (recommendation && Number(recommendation.emergency_id) !== Number(emergencyId)) {
+      throw Object.assign(new Error('Recommendation belongs to a different incident.'), { status: 409, code: 'RECOMMENDATION_INCIDENT_MISMATCH' });
+    }
     if (recommendation) {
+      if (!recommendation.is_active || Number(emergency.current_recommendation_id) !== Number(recommendation.id)) {
+        throw Object.assign(new Error('Recommendation is superseded. Recalculate before assignment.'), { status: 409, code: 'RECOMMENDATION_SUPERSEDED' });
+      }
       if (new Date() > new Date(recommendation.expires_at)) {
         const err = new Error('Dispatch recommendation has expired. Please recalculate recommendations before confirming assignment.');
         err.status = 409;
@@ -1042,8 +883,12 @@ class EmergencyService {
       recommendation.recommended_ambulance_id &&
       parseInt(ambulance_id, 10) !== parseInt(recommendation.recommended_ambulance_id, 10);
 
-    const transaction = await sequelize.transaction();
-    try {
+
+      await sequelize.query('SELECT AmbulanceID FROM dbo.Ambulances WITH (UPDLOCK, HOLDLOCK) WHERE AmbulanceID = :id', { replacements: { id: ambulance_id }, transaction });
+      const currentEligibility = await dispatchEngineService.revalidateCandidate(ambulance_id, emergencyId, transaction);
+      if (!currentEligibility.eligible) {
+        throw Object.assign(new Error(currentEligibility.reason), { status: 409, code: 'AMBULANCE_UNAVAILABLE' });
+      }
       // Strict Concurrency Check: verify again inside the transaction
       const activeConflicting = await Emergency.findOne({
         where: {
@@ -1132,9 +977,7 @@ class EmergencyService {
         transaction
       });
 
-      await transaction.commit();
-
-      const result = await this.getEmergencyById(emergency.id);
+      const result = await this.getEmergencyById(emergency.id, transaction);
 
       // Cache idempotent response
       if (key) {
@@ -1144,13 +987,22 @@ class EmergencyService {
           path: `/api/v1/emergencies/${emergencyId}/assign`,
           hash: idempotencyService.hashPayload({ ambulance_id, hospital_id, recommendation_id, override_reason }),
           status: 200,
-          body: result
+          body: result,
+          transaction
         });
       }
 
+      await transaction.commit();
+
+      syncFleetState({
+        ambulanceId: ambulance.AmbulanceID,
+        operationalStatus: 'ASSIGNED',
+        assignmentId: emergency.id
+      });
+
       return result;
     } catch (err) {
-      await transaction.rollback();
+      if (!transaction.finished) await transaction.rollback();
       // Handle SQL Server Filtered Unique Index violation gracefully
       if (err.name === 'SequelizeUniqueConstraintError' || err.message?.includes('UQ_Emergencies_ActiveAmbulance')) {
         const conflictErr = new Error(`Ambulance #${ambulance_id} is already actively assigned to another emergency incident. Database concurrency constraint prevented double assignment.`);
@@ -1182,17 +1034,20 @@ class EmergencyService {
       throw err;
     }
 
+    const transaction = await sequelize.transaction();
+    try {
     const key = idempotencyKey || data.idempotency_key;
     if (key) {
       const cached = await idempotencyService.checkIdempotency(
         key,
         `/api/v1/emergencies/${emergencyId}/reassign`,
-        { new_ambulance_id, reason }
+        { new_ambulance_id, reason },
+        user.id, transaction
       );
-      if (cached.isCached) return cached.body;
+      if (cached.isCached) { await transaction.commit(); return cached.body; }
     }
 
-    const emergency = await Emergency.findByPk(emergencyId);
+    const emergency = await Emergency.findByPk(emergencyId, { transaction });
     if (!emergency) {
       const err = new Error(`Emergency incident #${emergencyId} not found.`);
       err.status = 404;
@@ -1225,8 +1080,12 @@ class EmergencyService {
       throw err;
     }
 
-    const transaction = await sequelize.transaction();
-    try {
+
+      const lockedIds = [prevAmbulanceId, Number(new_ambulance_id)].filter(Boolean).sort((a, b) => a - b);
+      for (const id of lockedIds) await sequelize.query('SELECT AmbulanceID FROM dbo.Ambulances WITH (UPDLOCK, HOLDLOCK) WHERE AmbulanceID = :id', { replacements: { id }, transaction });
+      const currentEligibility = await dispatchEngineService.revalidateCandidate(new_ambulance_id, emergencyId, transaction);
+      if (!currentEligibility.eligible) throw Object.assign(new Error(currentEligibility.reason), { status: 409, code: 'AMBULANCE_UNAVAILABLE' });
+      const prevStatus = emergency.status;
       // 1. Release previous ambulance back to available
       if (prevAmbulanceId) {
         const prevAmb = await Ambulance.findByPk(prevAmbulanceId, { transaction });
@@ -1263,7 +1122,7 @@ class EmergencyService {
         emergency_id: emergency.id,
         user_id: user.id,
         event_type: EMERGENCY_EVENT_TYPES.REASSIGNED,
-        from_status: emergency.status,
+        from_status: prevStatus,
         to_status: EMERGENCY_STATUS.DISPATCHED,
         ambulance_id: newAmb.AmbulanceID,
         notes: `Reassigned from Ambulance #${prevAmbulanceId} to #${newAmb.AmbulanceID}. Reason: ${reason}. Notes: ${notes || ''}`,
@@ -1291,8 +1150,7 @@ class EmergencyService {
         transaction
       });
 
-      await transaction.commit();
-      const result = await this.getEmergencyById(emergency.id);
+      const result = await this.getEmergencyById(emergency.id, transaction);
 
       if (key) {
         await idempotencyService.saveIdempotencyRecord({
@@ -1301,13 +1159,19 @@ class EmergencyService {
           path: `/api/v1/emergencies/${emergencyId}/reassign`,
           hash: idempotencyService.hashPayload({ new_ambulance_id, reason }),
           status: 200,
-          body: result
+          body: result,
+          transaction
         });
       }
 
+      await transaction.commit();
+      if (prevAmbulanceId) {
+        syncFleetState({ ambulanceId: prevAmbulanceId, operationalStatus: 'AVAILABLE' });
+      }
+      syncFleetState({ ambulanceId: newAmb.AmbulanceID, operationalStatus: 'ASSIGNED', assignmentId: emergency.id });
       return result;
     } catch (err) {
-      await transaction.rollback();
+      if (!transaction.finished) await transaction.rollback();
       throw err;
     }
   }
@@ -1367,7 +1231,7 @@ class EmergencyService {
       await transaction.commit();
       return this.getEmergencyById(emergency.id);
     } catch (err) {
-      await transaction.rollback();
+      if (!transaction.finished) await transaction.rollback();
       throw err;
     }
   }
@@ -1386,17 +1250,20 @@ class EmergencyService {
       throw err;
     }
 
+    const transaction = await sequelize.transaction();
+    try {
     const key = idempotencyKey || data.idempotency_key;
     if (key) {
       const cached = await idempotencyService.checkIdempotency(
         key,
         `/api/v1/emergencies/${emergencyId}/status`,
-        { status, notes, resolution_notes, hospital_id }
+        { status, notes, resolution_notes, hospital_id },
+        user.id, transaction
       );
-      if (cached.isCached) return cached.body;
+      if (cached.isCached) { await transaction.commit(); return cached.body; }
     }
 
-    const emergency = await Emergency.findByPk(emergencyId);
+    const emergency = await Emergency.findByPk(emergencyId, { transaction });
     if (!emergency) {
       const err = new Error(`Emergency incident #${emergencyId} not found.`);
       err.status = 404;
@@ -1404,8 +1271,12 @@ class EmergencyService {
       throw err;
     }
 
+    if (user.role === 'AMBULANCE_CREW' &&
+        Number(env.fleet.crewBindings[String(user.id)]) !== Number(emergency.assigned_ambulance_id)) {
+      throw Object.assign(new Error('Crew access requires an assigned vehicle binding.'), { status: 403, code: 'INCIDENT_ACCESS_DENIED' });
+    }
     const prevStatus = emergency.status;
-    const newStatus = status.toUpperCase();
+    const newStatus = String(status).toUpperCase();
 
     // 1. Validate State Machine Transition
     if (newStatus !== prevStatus && !isValidTransition(prevStatus, newStatus)) {
@@ -1426,6 +1297,14 @@ class EmergencyService {
       throw err;
     }
 
+    if (data.version !== undefined && (!Number.isSafeInteger(data.version) || data.version !== emergency.version)) {
+      throw Object.assign(new Error('The incident version changed. Refresh before retrying.'), { status: 409, code: 'CONCURRENT_INCIDENT_UPDATE' });
+    }
+    if (newStatus === prevStatus) { await transaction.commit(); return this.getEmergencyById(emergencyId); }
+    if (newStatus === EMERGENCY_STATUS.DISPATCHED && !emergency.assigned_ambulance_id) {
+      throw Object.assign(new Error('Use the assignment endpoint to dispatch an ambulance.'), { status: 400, code: 'ASSIGNMENT_REQUIRED' });
+    }
+
     // Special checks for cancellation & resolution
     if (newStatus === EMERGENCY_STATUS.CANCELLED && (!notes && !data.cancellation_reason)) {
       const err = new Error('A cancellation reason/note is required when cancelling an emergency incident.');
@@ -1441,8 +1320,7 @@ class EmergencyService {
       throw err;
     }
 
-    const transaction = await sequelize.transaction();
-    try {
+
       emergency.status = newStatus;
 
       if (['RESOLVED', 'CLOSED', 'CANCELLED'].includes(newStatus) && !emergency.resolved_at) {
@@ -1459,7 +1337,7 @@ class EmergencyService {
 
       // If resolving, closing, or cancelling, release ambulance back to AVAILABLE
       let releasedAmbulance = null;
-      if (shouldReleaseAmbulance(newStatus) && emergency.assigned_ambulance_id) {
+      if (shouldReleaseAmbulance(newStatus) && !shouldReleaseAmbulance(prevStatus) && emergency.assigned_ambulance_id) {
         const amb = await Ambulance.findByPk(emergency.assigned_ambulance_id, { transaction });
         if (amb) {
           amb.Status = toDatabaseAmbulanceStatus('available');
@@ -1509,14 +1387,14 @@ class EmergencyService {
           to_status: newStatus,
           ambulance_id: emergency.assigned_ambulance_id,
           notes: notes || resolution_notes || undefined,
+          resolution_notes: resolution_notes || undefined,
           changed_by: user.name,
           actor_role: user.role
         },
         transaction
       });
 
-      await transaction.commit();
-      const result = await this.getEmergencyById(emergency.id);
+      const result = await this.getEmergencyById(emergency.id, transaction);
 
       if (key) {
         await idempotencyService.saveIdempotencyRecord({
@@ -1525,13 +1403,22 @@ class EmergencyService {
           path: `/api/v1/emergencies/${emergencyId}/status`,
           hash: idempotencyService.hashPayload({ status, notes, resolution_notes, hospital_id }),
           status: 200,
-          body: result
+          body: result,
+          transaction
         });
       }
 
+      await transaction.commit();
+      if (emergency.assigned_ambulance_id) {
+        syncFleetState({
+          ambulanceId: emergency.assigned_ambulance_id,
+          operationalStatus: fleetStatusForEmergency(newStatus),
+          assignmentId: shouldReleaseAmbulance(newStatus) ? null : emergency.id
+        });
+      }
       return result;
     } catch (err) {
-      await transaction.rollback();
+      if (!transaction.finished) await transaction.rollback();
       throw err;
     }
   }
@@ -1584,13 +1471,13 @@ class EmergencyService {
    */
   async getEmergencyHospitals(emergencyId) {
     const emergency = await this.getEmergencyById(emergencyId);
-    const emgLat = emergency.latitude ? parseFloat(emergency.latitude) : null;
-    const emgLng = emergency.longitude ? parseFloat(emergency.longitude) : null;
+    const emgLat = emergency.latitude !== null && emergency.latitude !== undefined ? parseFloat(emergency.latitude) : null;
+    const emgLng = emergency.longitude !== null && emergency.longitude !== undefined ? parseFloat(emergency.longitude) : null;
 
     let candidateHospitals = [];
 
     // 1. If incident has coordinates, perform Phase 4 dynamic discovery (DB + Google Places + Google Routes)
-    if (emgLat && emgLng) {
+    if (hasValidCoordinates(emgLat, emgLng)) {
       try {
         const nearbyResult = await hospitalService.findNearbyHospitals({
           latitude: emgLat,
@@ -1652,8 +1539,11 @@ class EmergencyService {
               formatted_duration: h.formatted_duration || null,
               data_source: h.data_source || 'LOCAL_DATABASE',
               capacity_status: 'UNKNOWN',
+              is_estimated: h.is_route_estimated !== false,
+              routing_fallback: h.is_route_estimated !== false,
               is_current_destination: emergency.assigned_hospital_id === hid,
-              capabilities: [h.facility_type || 'GENERAL_HOSPITAL', 'Emergency Trauma Support', 'Critical Care Stabilization']
+              capabilities: h.facility_type ? [h.facility_type] : [],
+              capabilities_verified: false
             });
           }
         }
@@ -1671,7 +1561,7 @@ class EmergencyService {
 
       candidateHospitals = hospitals.map(h => {
         let routeEstimate = null;
-        if (emgLat && emgLng && h.latitude && h.longitude) {
+        if (hasValidCoordinates(emgLat, emgLng) && hasValidCoordinates(h.latitude, h.longitude)) {
           routeEstimate = googleMapsService.calculateHaversineDistanceAndTime(
             { lat: emgLat, lng: emgLng },
             { lat: parseFloat(h.latitude), lng: parseFloat(h.longitude) }
@@ -1690,8 +1580,11 @@ class EmergencyService {
           formatted_duration: routeEstimate ? routeEstimate.formatted_duration : null,
           data_source: h.data_source || 'LOCAL_DATABASE',
           capacity_status: 'UNKNOWN',
+          is_estimated: true,
+          routing_fallback: true,
           is_current_destination: emergency.assigned_hospital_id === h.HospitalID,
-          capabilities: [h.facility_type || 'GENERAL_HOSPITAL', 'Emergency Trauma Support', 'Critical Care Stabilization']
+          capabilities: h.facility_type ? [h.facility_type] : [],
+              capabilities_verified: false
         };
       });
     }
@@ -1709,10 +1602,14 @@ class EmergencyService {
   /**
    * Phase 5: Retrieve active emergency assignments across fleet
    */
-  async getActiveAssignments() {
+  async getActiveAssignments(user) {
+    const crewVehicle = user?.role === 'AMBULANCE_CREW' ? Number(env.fleet.crewBindings[String(user.id)]) : null;
+    if (user?.role === 'AMBULANCE_CREW' && !crewVehicle) {
+      throw Object.assign(new Error('Crew access requires an assigned vehicle binding.'), { status: 403, code: 'INCIDENT_ACCESS_DENIED' });
+    }
     const activeEmergencies = await Emergency.findAll({
       where: {
-        assigned_ambulance_id: { [Op.ne]: null },
+        assigned_ambulance_id: crewVehicle || { [Op.ne]: null },
         status: {
           [Op.in]: [
             EMERGENCY_STATUS.DISPATCH_RECOMMENDED,

@@ -75,6 +75,9 @@ class DataGovService {
         });
 
         const data = response.data;
+        if (data?.error || ['error', 'failed'].includes(String(data?.status).toLowerCase())) {
+          throw new Error('data.gov.in rejected the request: ' + this.sanitizeError(data.message || data.error || data.status));
+        }
         if (!data || typeof data !== 'object') {
           throw new Error('Invalid JSON response received from data.gov.in');
         }

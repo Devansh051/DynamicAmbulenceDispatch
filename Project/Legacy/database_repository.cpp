@@ -90,7 +90,7 @@ std::string stringColumn(const std::string& parameter) {
 }
 }
 
-DatabaseRepository::DatabaseRepository() : environment_(SQL_NULL_HENV), connection_(SQL_NULL_HDBC) {}
+DatabaseRepository::DatabaseRepository() : phase5FleetManaged_(false), environment_(SQL_NULL_HENV), connection_(SQL_NULL_HDBC) {}
 
 DatabaseRepository::~DatabaseRepository() {
     disconnect();
@@ -148,9 +148,13 @@ bool DatabaseRepository::connectFromEnvironment() {
     const char* driver = environmentValue("DB_DRIVER");
     const char* user = environmentValue("DB_USER");
     const char* password = environmentValue("DB_PASSWORD");
+    std::string endpoint(server);
+    if (const char* port = environmentValue("DB_PORT")) {
+        endpoint = endpoint.substr(0, endpoint.find('\\')) + "," + port;
+    }
     std::ostringstream connectionString;
     connectionString << "Driver={" << (driver ? driver : "ODBC Driver 18 for SQL Server") << "};"
-                     << "Server=" << server << ";Database=" << name << ";"
+                     << "Server=" << endpoint << ";Database=" << name << ";"
                      << "Encrypt=" << (environmentValue("DB_ENCRYPT") ? environmentValue("DB_ENCRYPT") : "yes") << ";"
                      << "TrustServerCertificate="
                      << (environmentValue("DB_TRUST_SERVER_CERTIFICATE") ? environmentValue("DB_TRUST_SERVER_CERTIFICATE") : "yes")
@@ -173,6 +177,15 @@ bool DatabaseRepository::connectFromEnvironment() {
         std::cerr << "ERROR: Could not connect to SQL Server. Please check database configuration.\n";
         return false;
     }
+    SQLHSTMT guard = SQL_NULL_HSTMT;
+    if (!succeeded(SQLAllocHandle(SQL_HANDLE_STMT, connection_, &guard))) { disconnect(); return false; }
+    int managed = 1; SQLLEN indicator = 0;
+    bool guardOk = succeeded(SQLExecDirectA(guard, reinterpret_cast<SQLCHAR*>(const_cast<char*>(
+        "SELECT CASE WHEN OBJECT_ID('dbo.DispatchRecommendations','U') IS NOT NULL THEN 1 ELSE 0 END")), SQL_NTS)) &&
+        succeeded(SQLFetch(guard)) && succeeded(SQLGetData(guard, 1, SQL_C_SLONG, &managed, 0, &indicator));
+    SQLFreeHandle(SQL_HANDLE_STMT, guard);
+    if (!guardOk) { disconnect(); return false; }
+    phase5FleetManaged_ = managed != 0;
     return true;
 }
 
@@ -417,7 +430,7 @@ bool DatabaseRepository::getPatientStatistics(PatientStatistics& statistics) {
 
 int DatabaseRepository::getAmbulances(Ambulance ambulances[], int maxAmbulances) {
     SQLHSTMT statement = SQL_NULL_HSTMT; if (!succeeded(SQLAllocHandle(SQL_HANDLE_STMT, connection_, &statement))) return 0;
-    bool ok = succeeded(SQLExecDirectA(statement, reinterpret_cast<SQLCHAR*>(const_cast<char*>("SELECT AmbulanceID,CurrentHospitalID,Status,Fuel FROM Ambulances ORDER BY AmbulanceID")), SQL_NTS));
+    bool ok = succeeded(SQLExecDirectA(statement, reinterpret_cast<SQLCHAR*>(const_cast<char*>((phase5FleetManaged_ ? "SELECT AmbulanceID,CurrentHospitalID,Status,Fuel FROM Ambulances WHERE CurrentHospitalID BETWEEN 1 AND 15 AND is_active=1 AND is_simulated=0 ORDER BY AmbulanceID" : "SELECT AmbulanceID,CurrentHospitalID,Status,Fuel FROM Ambulances WHERE CurrentHospitalID BETWEEN 1 AND 15 ORDER BY AmbulanceID"))), SQL_NTS));
     if (!ok) printDiagnostics(SQL_HANDLE_STMT, statement, "loading ambulances");
     int count = 0; SQLLEN indicator = 0;
     while (ok && count < maxAmbulances && SQLFetch(statement) == SQL_SUCCESS) {
@@ -441,6 +454,10 @@ bool DatabaseRepository::getAmbulanceById(int ambulanceId, Ambulance& ambulance)
 }
 
 bool DatabaseRepository::updateAmbulance(int ambulanceId, int hospitalId, const std::string& status, int fuel) {
+    if (phase5FleetManaged_) {
+        std::cerr << "Fleet writes are managed by Phase 5. Use the authenticated dispatcher/lifecycle API.\n";
+        return false;
+    }
     SQLHSTMT statement = SQL_NULL_HSTMT; if (!succeeded(SQLAllocHandle(SQL_HANDLE_STMT, connection_, &statement))) return false;
     bool ok = succeeded(SQLPrepareA(statement, reinterpret_cast<SQLCHAR*>(const_cast<char*>("UPDATE Ambulances SET CurrentHospitalID=?,Status=?,Fuel=? WHERE AmbulanceID=?")), SQL_NTS)) && bindInt(statement, 1, hospitalId) && bindText(statement, 2, status) && bindInt(statement, 3, fuel) && bindInt(statement, 4, ambulanceId) && execute(statement, "updating ambulance");
     SQLFreeHandle(SQL_HANDLE_STMT, statement); return ok;

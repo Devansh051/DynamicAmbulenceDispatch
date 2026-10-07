@@ -169,7 +169,7 @@ export const getEmergencyHospitals = async (req, res, next) => {
 
 export const getActiveAssignments = async (req, res, next) => {
   try {
-    const result = await emergencyService.getActiveAssignments();
+    const result = await emergencyService.getActiveAssignments(req.user);
     res.json(formatSuccess(result));
   } catch (err) {
     next(err);
@@ -196,4 +196,3 @@ export default {
   getEmergencyHospitals,
   getActiveAssignments
 };
-

@@ -10,9 +10,10 @@ const startTime = Date.now();
 export const getHealth = async (req, res) => {
   try {
     const dbHealth = await checkDatabaseHealth();
+    const detailed = ['ADMIN', 'DISPATCHER'].includes(req.user?.role);
 
     let counts = null;
-    if (dbHealth.connected) {
+    if (detailed && dbHealth.connected) {
       try {
         const [hospitalsCount, ambulancesCount, patientsCount] = await Promise.all([
           Hospital.count(),
@@ -25,7 +26,7 @@ export const getHealth = async (req, res) => {
           patients: patientsCount
         };
       } catch (countErr) {
-        counts = { error: countErr.message };
+        counts = { unavailable: true };
       }
     }
 
@@ -37,21 +38,22 @@ export const getHealth = async (req, res) => {
       service: 'EMS Dynamic Ambulance Dispatch API',
       version: '1.0.0',
       uptimeSeconds: Math.floor((Date.now() - startTime) / 1000),
-      environment: env.nodeEnv,
-      database: {
+      environment: detailed ? env.nodeEnv : undefined,
+      database: detailed ? {
         ...dbHealth,
+        error: dbHealth.connected ? undefined : 'Database unavailable',
         counts
-      },
-      system: {
+      } : { connected: dbHealth.connected, latencyMs: dbHealth.latencyMs },
+      system: detailed ? {
         nodeVersion: process.version,
         platform: process.platform,
         memoryUsageMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
-      }
+      } : undefined
     };
 
     return res.status(statusCode).json(formatSuccess(data));
   } catch (error) {
-    return res.status(500).json(formatError(error.message, 'HEALTH_CHECK_FAILED'));
+    return res.status(500).json(formatError('Health check unavailable.', 'HEALTH_CHECK_FAILED'));
   }
 };
 

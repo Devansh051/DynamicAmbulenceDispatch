@@ -6,15 +6,23 @@ import Hospital from '../hospitals/hospital.model.js';
 import Emergency, { EMERGENCY_STATUS } from '../emergencies/emergency.model.js';
 import DispatchRecommendation from './dispatchRecommendation.model.js';
 import googleMapsService from '../hospitals/googleMaps.service.js';
+import fleetTrackerService from '../fleet/fleetTracker.service.js';
 import logger from '../../utils/logger.js';
+
+import { hasValidCoordinates as hasCoordinates } from '../../utils/coordinates.js';
+
+export const requiresAdvancedSupport = (emergency) => Number(emergency.severity) >= 4 ||
+  ['CARDIAC', 'TRAUMA', 'RESPIRATORY', 'STROKE'].includes(String(emergency.emergency_type).toUpperCase());
+
+export const matchesSimulation = (ambulance, emergency) => Boolean(ambulance.is_simulated) === Boolean(emergency.is_simulated);
 
 class DispatchEngineService {
   /**
    * Generates a deterministic recommendation for an emergency incident
    */
   async evaluateCandidates(emergency, user = null, transaction = null) {
-    const emgLat = emergency.latitude ? parseFloat(emergency.latitude) : null;
-    const emgLng = emergency.longitude ? parseFloat(emergency.longitude) : null;
+    const emgLat = emergency.latitude !== null && emergency.latitude !== undefined ? parseFloat(emergency.latitude) : null;
+    const emgLng = emergency.longitude !== null && emergency.longitude !== undefined ? parseFloat(emergency.longitude) : null;
     const emergencyType = (emergency.emergency_type || 'OTHER').toUpperCase();
     const severity = parseInt(emergency.severity, 10) || 3;
 
@@ -55,11 +63,16 @@ class DispatchEngineService {
       activeEmergencies.map(e => e.assigned_ambulance_id).filter(Boolean)
     );
 
+    // A missing GPS record permits station fallback; a failed live-store read
+    // does not. Dispatch must never treat an unavailable Redis as an empty fleet.
+    const liveFleetStates = await fleetTrackerService.getLiveStates(ambulances.map((ambulance) => ambulance.AmbulanceID));
+
     // 3. Count available ambulances per station hospital for coverage impact analysis
     const hospitalAvailableCounts = {};
     for (const amb of ambulances) {
       if (
         isAmbulanceAvailable(amb.Status) &&
+        matchesSimulation(amb, emergency) &&
         !activeAssignedIds.has(amb.AmbulanceID) &&
         (amb.Fuel || 0) >= DISPATCH_CONFIG.thresholds.minimum_fuel_percent
       ) {
@@ -77,18 +90,44 @@ class DispatchEngineService {
       const isAssigned = activeAssignedIds.has(amb.AmbulanceID);
       const fuelLevel = amb.Fuel !== null && amb.Fuel !== undefined ? amb.Fuel : 0;
       const hasSufficientFuel = fuelLevel >= DISPATCH_CONFIG.thresholds.minimum_fuel_percent;
+      const liveState = liveFleetStates.get(amb.AmbulanceID) || null;
+
+      if (!matchesSimulation(amb, emergency)) {
+        excludedAmbulances.push({
+          ambulance_id: amb.AmbulanceID,
+          fleet_code: amb.fleet_code || `AMB-${amb.AmbulanceID}`,
+          status: amb.Status,
+          fuel: fuelLevel,
+          reason: 'Simulated vehicles are isolated from real incident dispatch by configuration.',
+          code: 'SIMULATED_VEHICLE_DISABLED'
+        });
+        continue;
+      }
+
+      if (DISPATCH_CONFIG.thresholds.require_online_fleet_state && liveState?.health !== 'ONLINE') {
+        excludedAmbulances.push({
+          ambulance_id: amb.AmbulanceID,
+          fleet_code: amb.fleet_code || `AMB-${amb.AmbulanceID}`,
+          status: amb.Status,
+          fuel: fuelLevel,
+          reason: 'A fresh online fleet telemetry state is required for dispatch eligibility.',
+          code: 'FLEET_STATE_NOT_ONLINE'
+        });
+        continue;
+      }
 
       // Resolve coordinates (live GPS preferred, station hospital fallback)
-      let ambLat = amb.current_location_lat ? parseFloat(amb.current_location_lat) : null;
-      let ambLng = amb.current_location_lng ? parseFloat(amb.current_location_lng) : null;
-      let isLiveGps = Boolean(ambLat && ambLng);
+      const hasFreshLiveGps = liveState?.health === 'ONLINE' && hasCoordinates(liveState.latitude, liveState.longitude);
+      let ambLat = hasFreshLiveGps ? Number(liveState.latitude) : null;
+      let ambLng = hasFreshLiveGps ? Number(liveState.longitude) : null;
+      const isLiveGps = Boolean(hasFreshLiveGps);
 
-      if ((!ambLat || !ambLng) && amb.currentHospital?.latitude && amb.currentHospital?.longitude) {
+      if (!hasCoordinates(ambLat, ambLng) && hasCoordinates(amb.currentHospital?.latitude, amb.currentHospital?.longitude)) {
         ambLat = parseFloat(amb.currentHospital.latitude);
         ambLng = parseFloat(amb.currentHospital.longitude);
       }
 
-      const hasCoordinates = Boolean(ambLat && ambLng);
+      const hasValidCoordinates = hasCoordinates(ambLat, ambLng);
 
       // Check exclusion criteria
       if (!isAvailable) {
@@ -127,7 +166,7 @@ class DispatchEngineService {
         continue;
       }
 
-      if (!hasCoordinates) {
+      if (!hasValidCoordinates) {
         excludedAmbulances.push({
           ambulance_id: amb.AmbulanceID,
           fleet_code: amb.fleet_code || `AMB-${amb.AmbulanceID}`,
@@ -139,13 +178,19 @@ class DispatchEngineService {
         continue;
       }
 
+      if (requiresAdvancedSupport(emergency) && amb.vehicle_type !== 'ADVANCED_LIFE_SUPPORT') {
+        excludedAmbulances.push({ ambulance_id: amb.AmbulanceID, fleet_code: amb.fleet_code,
+          code: 'INSUFFICIENT_CAPABILITY', reason: 'This incident requires advanced life support.' });
+        continue;
+      }
+
       // Compute Travel Time / Route ETA
       let travelTimeMinutes = null;
       let distanceKm = null;
       let isEstimated = true;
       let routingFallback = false;
 
-      if (emgLat && emgLng && ambLat && ambLng) {
+      if (hasCoordinates(emgLat, emgLng) && hasCoordinates(ambLat, ambLng)) {
         const haversine = googleMapsService.calculateHaversineDistanceAndTime(
           { lat: ambLat, lng: ambLng },
           { lat: emgLat, lng: emgLng },
@@ -223,7 +268,7 @@ class DispatchEngineService {
       else fuelScore = 2;
 
       // (e) Location Freshness & Confidence Score (Max 10)
-      const updatedAt = amb.updated_at ? new Date(amb.updated_at).getTime() : 0;
+      const updatedAt = isLiveGps ? new Date(liveState.last_gps_at).getTime() : 0;
       const ageMinutes = updatedAt ? Math.floor((Date.now() - updatedAt) / (60 * 1000)) : 999;
       let freshnessScore = 3;
       let freshnessCategory = 'BASE_STATION';
@@ -244,6 +289,13 @@ class DispatchEngineService {
         freshnessCategory = 'HOSPITAL_BASE';
       }
 
+      // Preserve the existing factor curves while honoring configured weights.
+      travelTimeScore = Math.round(travelTimeScore / 40 * DISPATCH_CONFIG.weights.travel_time * 10) / 10;
+      capabilityScore = Math.round(capabilityScore / 20 * DISPATCH_CONFIG.weights.capability_match * 10) / 10;
+      coverageScore = Math.round(coverageScore / 20 * DISPATCH_CONFIG.weights.zone_coverage_impact * 10) / 10;
+      fuelScore = Math.round(fuelScore / 10 * DISPATCH_CONFIG.weights.fuel_readiness * 10) / 10;
+      freshnessScore = Math.round(freshnessScore / 10 * DISPATCH_CONFIG.weights.location_freshness * 10) / 10;
+
       // Total Score
       const totalScore = Math.round(
         (travelTimeScore + capabilityScore + coverageScore + fuelScore + freshnessScore) * 10
@@ -252,10 +304,10 @@ class DispatchEngineService {
       // Formulate detailed explanation
       const explanationText = [
         `ETA ~${travelTimeMinutes !== null ? travelTimeMinutes + 'm' : 'N/A'} (${distanceKm !== null ? distanceKm + ' km' : 'dist unknown'})`,
-        `Capability: ${vehicleType} (${capabilityScore}/20)`,
+        `Capability: ${vehicleType} (${capabilityScore}/${DISPATCH_CONFIG.weights.capability_match})`,
         `Coverage impact: ${coverageImpact} (${remainingAfterDispatch} remaining in sector)`,
-        `Fuel: ${fuelLevel}% (${fuelScore}/10)`,
-        `Location: ${freshnessCategory} (${freshnessScore}/10)`
+        `Fuel: ${fuelLevel}% (${fuelScore}/${DISPATCH_CONFIG.weights.fuel_readiness})`,
+        `Location: ${freshnessCategory} (${freshnessScore}/${DISPATCH_CONFIG.weights.location_freshness})`
       ].join(' | ');
 
       eligibleCandidates.push({
@@ -275,6 +327,7 @@ class DispatchEngineService {
         is_live_gps: isLiveGps,
         location_freshness_category: freshnessCategory,
         location_age_minutes: ageMinutes,
+        fleet_health: liveState?.health || 'LOCATION_UNAVAILABLE',
         distance_km: distanceKm,
         travel_time_minutes: travelTimeMinutes,
         is_estimated: isEstimated,
@@ -312,7 +365,7 @@ class DispatchEngineService {
 
     const recommendedHospitals = hospitals.map(h => {
       let routeEstimate = null;
-      if (emgLat && emgLng && h.latitude && h.longitude) {
+      if (hasCoordinates(emgLat, emgLng) && hasCoordinates(h.latitude, h.longitude)) {
         routeEstimate = googleMapsService.calculateHaversineDistanceAndTime(
           { lat: emgLat, lng: emgLng },
           { lat: parseFloat(h.latitude), lng: parseFloat(h.longitude) }
@@ -326,11 +379,14 @@ class DispatchEngineService {
         distance_km: routeEstimate ? routeEstimate.distance_km : null,
         travel_time_minutes: routeEstimate ? routeEstimate.duration_minutes : null,
         capacity_status: 'UNKNOWN', // Live EHR capacity feed not connected; clearly labeled per specs
-        capabilities: [h.facility_type, 'Emergency Triage', 'Stabilization Unit']
+        capabilities: h.facility_type ? [h.facility_type] : [],
+        capabilities_verified: false,
+        is_estimated: true,
+        routing_fallback: true
       };
     });
 
-    recommendedHospitals.sort((a, b) => (a.travel_time_minutes || 999) - (b.travel_time_minutes || 999));
+    recommendedHospitals.sort((a, b) => (a.travel_time_minutes ?? Infinity) - (b.travel_time_minutes ?? Infinity));
 
     const topAmbulance = eligibleCandidates[0] || null;
     const topHospital = recommendedHospitals[0] || null;
@@ -386,9 +442,31 @@ class DispatchEngineService {
    * Revalidates a candidate ambulance immediately prior to assignment
    */
   async revalidateCandidate(ambulanceId, emergencyId, transaction = null) {
-    const ambulance = await Ambulance.findByPk(ambulanceId, { transaction });
+    const ambulance = await Ambulance.findByPk(ambulanceId, {
+      include: [{ model: Hospital, as: 'currentHospital', attributes: ['latitude', 'longitude'] }], transaction
+    });
     if (!ambulance || !ambulance.is_active) {
       return { eligible: false, reason: `Ambulance #${ambulanceId} does not exist or is inactive.` };
+    }
+
+    const emergency = await Emergency.findByPk(emergencyId, { transaction });
+    if (!emergency || !matchesSimulation(ambulance, emergency)) {
+      return { eligible: false, reason: 'Simulated and operational incidents and vehicles cannot be mixed.' };
+    }
+    if (requiresAdvancedSupport(emergency) && ambulance.vehicle_type !== 'ADVANCED_LIFE_SUPPORT') {
+      return { eligible: false, reason: 'This incident requires advanced life support.' };
+    }
+
+    const liveState = (await fleetTrackerService.getLiveStates([ambulanceId])).get(Number(ambulanceId));
+    if (DISPATCH_CONFIG.thresholds.require_online_fleet_state) {
+      if (liveState?.health !== 'ONLINE') {
+        return { eligible: false, reason: `Ambulance #${ambulanceId} does not have a fresh online telemetry state.` };
+      }
+    }
+
+    if (!(liveState?.health === 'ONLINE' && hasCoordinates(liveState.latitude, liveState.longitude)) &&
+        !hasCoordinates(ambulance.currentHospital?.latitude, ambulance.currentHospital?.longitude)) {
+      return { eligible: false, reason: 'Ambulance has no fresh valid GPS or valid base coordinates.' };
     }
 
     if (!isAmbulanceAvailable(ambulance.Status)) {

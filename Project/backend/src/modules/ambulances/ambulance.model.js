@@ -95,6 +95,11 @@ export const Ambulance = sequelize.define('Ambulance', {
     allowNull: false,
     defaultValue: true
   },
+  is_simulated: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
   legacy_id: {
     type: DataTypes.INTEGER,
     allowNull: true
@@ -118,7 +123,7 @@ export const Ambulance = sequelize.define('Ambulance', {
   hooks: {
     beforeValidate: async (ambulance) => {
       if (!ambulance.AmbulanceID) {
-        const [result] = await sequelize.query('SELECT COALESCE(MAX(AmbulanceID), 0) + 1 AS nextId FROM dbo.Ambulances');
+        const [result] = await sequelize.query('SELECT NEXT VALUE FOR dbo.AmbulanceIdSequence AS nextId');
         ambulance.AmbulanceID = result[0]?.nextId || 1;
       }
       if (!ambulance.legacy_id) {

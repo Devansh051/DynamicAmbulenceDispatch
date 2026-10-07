@@ -25,8 +25,12 @@ import {
 import { Link } from 'react-router-dom';
 import { healthService } from '../services/healthService';
 import { LoadingState, ErrorState } from '../components/StateFeedback';
+import FleetDigitalTwinPanel from '../components/FleetDigitalTwinPanel';
+import { useAuth } from '../context/AuthContext';
 
 export const DashboardPage = () => {
+  const { user } = useAuth();
+  const canMonitor = ['ADMIN', 'DISPATCHER'].includes(user?.role);
   const [healthData, setHealthData] = useState(null);
   const [overviewData, setOverviewData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -37,13 +41,14 @@ export const DashboardPage = () => {
     setLoading(true);
     setError(null);
     try {
-      const [healthRes, overviewRes] = await Promise.all([
-        healthService.getHealth().catch(() => ({ data: { status: 'healthy', database: { connected: true, latencyMs: 3 } } })),
-        healthService.getOverview().catch(() => ({ data: null }))
+      const [healthRes, overviewRes] = await Promise.allSettled([
+        healthService.getHealth(),
+        healthService.getOverview()
       ]);
 
-      setHealthData(healthRes.data);
-      setOverviewData(overviewRes.data);
+      setHealthData(healthRes.status === 'fulfilled' ? healthRes.value.data : { status: 'degraded' });
+      setOverviewData(overviewRes.status === 'fulfilled' ? overviewRes.value.data : null);
+      if (healthRes.status === 'rejected' || overviewRes.status === 'rejected') setError('Some current dashboard data is unavailable. Refresh to retry; missing values are not estimated.');
       setLastRefreshed(new Date());
     } catch (err) {
       setError(err.message || 'Failed to load command-center telemetry');
@@ -53,10 +58,13 @@ export const DashboardPage = () => {
   };
 
   useEffect(() => {
+    if (!canMonitor) { setLoading(false); return; }
     loadData();
     const interval = setInterval(loadData, 30000); // 30s auto-refresh
     return () => clearInterval(interval);
-  }, []);
+  }, [canMonitor]);
+
+  if (!canMonitor) return <section className="space-y-3"><h1 className="text-xl font-semibold text-white">Operations access</h1><p className="text-slate-300">Fleet monitoring is available to dispatchers and administrators. Use the navigation for your authorized workspace.</p><Link className="text-sky-300 underline" to="/profile">Profile and security</Link></section>;
 
   if (loading && !healthData && !overviewData) {
     return <LoadingState message="Initializing Tactical Telemetry Grid..." />;
@@ -65,17 +73,17 @@ export const DashboardPage = () => {
   const dbCounts = healthData?.database?.counts || {};
   const isHealthy = healthData?.status === 'healthy';
 
-  const totalAmbulances = overviewData?.ambulancesCount ?? dbCounts.ambulances ?? 20;
-  const availableAmbulances = overviewData?.availableAmbulances ?? 16;
-  const busyAmbulances = overviewData?.busyAmbulances ?? (totalAmbulances - availableAmbulances);
-  const totalHospitals = overviewData?.hospitalsCount ?? dbCounts.hospitals ?? 15;
-  const totalEmergencies = overviewData?.emergenciesCount ?? dbCounts.emergencies ?? 0;
-  const activeZones = overviewData?.activeZonesCount ?? 4;
+  const totalAmbulances = overviewData?.ambulancesCount ?? dbCounts.ambulances;
+  const availableAmbulances = overviewData?.availableAmbulances;
+  const busyAmbulances = overviewData?.busyAmbulances;
+  const totalHospitals = overviewData?.hospitalsCount ?? dbCounts.hospitals;
+  const totalEmergencies = overviewData?.emergenciesCount ?? dbCounts.emergencies;
   const recentAmbulances = overviewData?.recentAmbulances || [];
-  const latencyMs = healthData?.database?.latencyMs ?? 3;
+  const latencyMs = healthData?.database?.latencyMs;
 
   return (
     <div className="space-y-6">
+      {error && <p role="alert" className="p-3 rounded-md border border-amber-500/30 text-amber-200">{error}</p>}
       {/* Top Banner: Mission-Critical Tactical Command HUD */}
       <div className="bg-[#131B2E] border border-[#1F2E4D] rounded-2xl p-6 relative overflow-hidden shadow-2xl">
         {/* Subtle background glow */}
@@ -87,10 +95,10 @@ export const DashboardPage = () => {
             <div className="flex flex-wrap items-center gap-2">
               <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="font-mono">LIVE TELEMETRY ACTIVE</span>
+                <span className="font-mono">{isHealthy ? 'COMMAND SERVICES READY' : 'COMMAND SERVICES DEGRADED'}</span>
               </div>
               <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/30 font-mono">
-                <span>Phase 5 Engine Active</span>
+                <span>Phase 5 Dispatch Workspace</span>
               </div>
               <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-slate-400 border border-[#1F2E4D] bg-[#0B0F19] font-mono">
                 <Clock className="w-3.5 h-3.5 text-slate-500" />
@@ -102,7 +110,7 @@ export const DashboardPage = () => {
               Emergency Command Center & Fleet Radar
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 max-w-2xl leading-relaxed">
-              Real-time ambulance dispatch coordination, 250m government hospital synchronization, and fail-safe routing with MSSQL transaction integrity.
+              Ambulance dispatch coordination, verified facility matching, and live telemetry with clearly identified routing estimates.
             </p>
           </div>
 
@@ -146,9 +154,9 @@ export const DashboardPage = () => {
           <div className="mt-3 flex items-baseline justify-between">
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-bold font-mono text-white">
-                {availableAmbulances}
+                {availableAmbulances ?? '--'}
               </span>
-              <span className="text-xs font-mono text-slate-400">/ {totalAmbulances}</span>
+              <span className="text-xs font-mono text-slate-400">/ {totalAmbulances ?? '--'}</span>
             </div>
             <span className="text-xs px-2 py-0.5 rounded font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               AVAILABLE
@@ -159,26 +167,26 @@ export const DashboardPage = () => {
           <div className="mt-3 w-full bg-[#0B0F19] rounded-full h-1.5 overflow-hidden flex">
             <div
               className="bg-emerald-500 h-full transition-all duration-500"
-              style={{ width: `${totalAmbulances ? (availableAmbulances / totalAmbulances) * 100 : 80}%` }}
+              style={{ width: `${totalAmbulances && availableAmbulances != null ? (availableAmbulances / totalAmbulances) * 100 : 0}%` }}
               title={`Available: ${availableAmbulances}`}
             />
             <div
               className="bg-blue-500 h-full transition-all duration-500"
-              style={{ width: `${totalAmbulances ? (busyAmbulances / totalAmbulances) * 100 : 20}%` }}
+              style={{ width: `${totalAmbulances && busyAmbulances != null ? (busyAmbulances / totalAmbulances) * 100 : 0}%` }}
               title={`Busy / Dispatched: ${busyAmbulances}`}
             />
           </div>
 
           <div className="mt-2.5 flex items-center justify-between text-xs text-slate-400 font-mono">
-            <span>{availableAmbulances} Standby</span>
-            <span>{busyAmbulances} On Mission</span>
+            <span>{availableAmbulances ?? '--'} Standby</span>
+            <span>{busyAmbulances ?? '--'} On Mission</span>
           </div>
         </div>
 
         {/* Metric 2: Emergency Incidents */}
         <div className="bg-[#131B2E] border border-[#1F2E4D] rounded-xl p-5 hover:border-rose-500/40 transition-colors group">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Incidents</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Recorded Incidents</span>
             <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center border border-rose-500/20 group-hover:bg-rose-500/20 transition-colors">
               <Siren className="w-4 h-4" />
             </div>
@@ -186,7 +194,7 @@ export const DashboardPage = () => {
           <div className="mt-3 flex items-baseline justify-between">
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-bold font-mono text-white">
-                {totalEmergencies}
+                {totalEmergencies ?? '--'}
               </span>
               <span className="text-xs text-slate-400 font-medium">Logged</span>
             </div>
@@ -196,7 +204,7 @@ export const DashboardPage = () => {
           </div>
           <p className="text-xs text-slate-400 mt-3 flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-            <span>OTP dispatch confirmation enforced</span>
+            <span>Dispatcher confirmation required</span>
           </p>
         </div>
 
@@ -211,17 +219,17 @@ export const DashboardPage = () => {
           <div className="mt-3 flex items-baseline justify-between">
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-bold font-mono text-white">
-                {totalHospitals}
+                {totalHospitals ?? '--'}
               </span>
               <span className="text-xs text-slate-400 font-mono">Facilities</span>
             </div>
             <span className="text-xs px-2 py-0.5 rounded font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              72H SYNC
+              DIRECTORY
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-3 flex items-center gap-1.5">
             <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-            <span>250m National Portal deduplication</span>
+            <span>Provider identity and facility-name matching</span>
           </p>
         </div>
 
@@ -236,20 +244,22 @@ export const DashboardPage = () => {
           <div className="mt-3 flex items-baseline justify-between">
             <div className="flex items-baseline gap-1.5">
               <span className="text-3xl font-bold font-mono text-white">
-                {latencyMs}
+                {latencyMs ?? '--'}
               </span>
               <span className="text-xs font-mono text-slate-400">ms</span>
             </div>
             <span className="text-xs px-2 py-0.5 rounded font-mono font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
-              ACID LOCKED
+              SQL SERVER
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-3 flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="font-mono text-slate-300">sp_getapplock active</span>
+            <span className="font-mono text-slate-300">{isHealthy ? 'SQL connection verified' : 'SQL health unavailable'}</span>
           </p>
         </div>
       </div>
+
+      <FleetDigitalTwinPanel />
 
       {/* Main Operations Split Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -286,7 +296,7 @@ export const DashboardPage = () => {
                 <tbody className="divide-y divide-[#1F2E4D]/50 font-mono">
                   {recentAmbulances.slice(0, 6).map((amb) => {
                     const isAvail = (amb.Status || '').toLowerCase() === 'available';
-                    const fuel = amb.Fuel ?? 100;
+                    const fuel = amb.Fuel;
                     const isLowFuel = fuel < 20;
 
                     return (
@@ -298,18 +308,18 @@ export const DashboardPage = () => {
                           </div>
                         </td>
                         <td className="py-3 px-3 text-slate-300">
-                          {amb.vehicle_type ? amb.vehicle_type.replace(/_/g, ' ') : 'ADVANCED LIFE SUPPORT'}
+                          {amb.vehicle_type ? amb.vehicle_type.replace(/_/g, ' ') : 'Unknown capability'}
                         </td>
                         <td className="py-3 px-3">
                           <div className="flex items-center gap-2">
                             <div className="w-16 bg-[#0B0F19] rounded-full h-1.5 overflow-hidden">
                               <div
                                 className={`h-full ${isLowFuel ? 'bg-rose-500' : 'bg-emerald-500'}`}
-                                style={{ width: `${Math.min(100, Math.max(0, fuel))}%` }}
+                                style={{ width: `${Math.min(100, Math.max(0, fuel ?? 0))}%` }}
                               />
                             </div>
                             <span className={`text-xs ${isLowFuel ? 'text-rose-400 font-bold' : 'text-slate-400'}`}>
-                              {fuel}%
+                              {fuel ?? '--'}%
                             </span>
                           </div>
                         </td>
@@ -321,7 +331,7 @@ export const DashboardPage = () => {
                                 : 'bg-blue-500/10 text-blue-400 border-blue-500/30'
                             }`}
                           >
-                            {amb.Status ? amb.Status.toUpperCase() : 'AVAILABLE'}
+                            {amb.Status ? amb.Status.toUpperCase() : 'UNKNOWN'}
                           </span>
                         </td>
                       </tr>
@@ -333,7 +343,7 @@ export const DashboardPage = () => {
           ) : (
             <div className="py-8 text-center text-slate-400 space-y-2">
               <Ambulance className="w-8 h-8 text-slate-600 mx-auto" />
-              <p className="text-xs">Fleet roster active in database. Click below to inspect units.</p>
+              <p className="text-xs">No fleet roster is available in this snapshot.</p>
               <Link to="/ambulances" className="text-xs text-blue-400 hover:underline">
                 Open Ambulances Page
               </Link>

@@ -88,8 +88,8 @@ class ZoneService {
       zone_code: normalizedCode,
       name: name.trim(),
       description: description ? description.trim() : null,
-      center_latitude: center_latitude || null,
-      center_longitude: center_longitude || null,
+      center_latitude: center_latitude ?? null,
+      center_longitude: center_longitude ?? null,
       radius_km: radius_km || null,
       is_active: Boolean(is_active)
     });

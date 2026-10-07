@@ -5,6 +5,10 @@ export const healthService = {
     return api.get('/health');
   },
 
+  async getDetailedHealth() {
+    return api.get('/health/details');
+  },
+
   async getOverview() {
     return api.get('/overview');
   }

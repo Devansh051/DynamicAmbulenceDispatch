@@ -1,0 +1,1049 @@
+{
+  "recorded_at": "2026-10-07T09:10:10.8857112+05:30",
+  "scope": "Existing Phase 1-5 repository; no Phase 6",
+  "phases": {
+    "phase3": "VERIFIED",
+    "phase1": "VERIFIED",
+    "phase2": "PARTIALLY VERIFIED",
+    "phase4": "PARTIALLY VERIFIED",
+    "phase5": "VERIFIED"
+  },
+  "backend": {
+    "command": "npm.cmd test -- --runInBand --json --outputFile=test-results-final.json",
+    "result": "PASS",
+    "passed": 181,
+    "failed": 0,
+    "blocked_reason": null,
+    "duration_seconds": 51.713,
+    "suites": [
+      {
+        "file": "fleet_integration.test.js",
+        "status": "passed",
+        "passed": 12,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "phase5_dispatch_engine.test.js",
+        "status": "passed",
+        "passed": 22,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "phase4_regression_fixes.test.js",
+        "status": "passed",
+        "passed": 25,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "phase4.test.js",
+        "status": "passed",
+        "passed": 19,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "phase3.test.js",
+        "status": "passed",
+        "passed": 25,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "auth.test.js",
+        "status": "passed",
+        "passed": 10,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "googleAuth.test.js",
+        "status": "passed",
+        "passed": 10,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "rbac.test.js",
+        "status": "passed",
+        "passed": 10,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "health.test.js",
+        "status": "passed",
+        "passed": 3,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "fleet_safety.test.js",
+        "status": "passed",
+        "passed": 35,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "errorHandler.test.js",
+        "status": "passed",
+        "passed": 1,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "fleet_tracking.test.js",
+        "status": "passed",
+        "passed": 4,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "shutdown.test.js",
+        "status": "passed",
+        "passed": 3,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "responseFormatter.test.js",
+        "status": "passed",
+        "passed": 2,
+        "failed": 0,
+        "blocked_reason": null
+      }
+    ]
+  },
+  "frontend": {
+    "command": "npm.cmd test -- --reporter=default --reporter=json --outputFile=test-results-final.json",
+    "result": "PASS",
+    "passed": 45,
+    "failed": 0,
+    "blocked_reason": null,
+    "duration_seconds": 5.12,
+    "suites": [
+      {
+        "file": "DashboardRecovery.test.jsx",
+        "status": "passed",
+        "passed": 2,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "FleetDigitalTwin.test.jsx",
+        "status": "passed",
+        "passed": 8,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "FleetMap.test.jsx",
+        "status": "passed",
+        "passed": 3,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "FleetService.test.jsx",
+        "status": "passed",
+        "passed": 2,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "LoginPage.test.jsx",
+        "status": "passed",
+        "passed": 4,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "Phase3Pages.test.jsx",
+        "status": "passed",
+        "passed": 5,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "Phase4NearbyMap.test.jsx",
+        "status": "passed",
+        "passed": 6,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "Phase5Dispatch.test.jsx",
+        "status": "passed",
+        "passed": 6,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "ProtectedRoute.test.jsx",
+        "status": "passed",
+        "passed": 5,
+        "failed": 0,
+        "blocked_reason": null
+      },
+      {
+        "file": "RoleAwareNavigation.test.jsx",
+        "status": "passed",
+        "passed": 4,
+        "failed": 0,
+        "blocked_reason": null
+      }
+    ]
+  },
+  "build": {
+    "gzip_kb": 150.37,
+    "exit_code": 0,
+    "duration_seconds": 3.71,
+    "advisory": "Chunk exceeds 500 kB",
+    "main_js_kb": 582.0,
+    "command": "npm.cmd run build"
+  },
+  "schema": {
+    "operational": {
+      "verified": true,
+      "connection": {
+        "database_name": "DynamicAmbulanceDispatch",
+        "tcp_port": 1433
+      },
+      "model_count": 15,
+      "missing_model_columns": [],
+      "migrations_reapplied": [
+        "006",
+        "007"
+      ],
+      "required": {
+        "Ambulances": [
+          "is_simulated",
+          "telemetry_checkpoint_at"
+        ],
+        "Emergencies": [
+          "version",
+          "is_simulated"
+        ],
+        "AmbulanceLocationHistory": [
+          "event_id"
+        ],
+        "AmbulanceOperationalEvents": [
+          "event_id"
+        ],
+        "FleetDispatchOutbox": [
+          "event_id"
+        ],
+        "DispatchRecommendations": [
+          "id"
+        ],
+        "EmergencyEvents": [
+          "id"
+        ],
+        "IdempotencyRecords": [
+          "id"
+        ]
+      },
+      "indexes": [
+        {
+          "table_name": "AmbulanceLocationHistory",
+          "name": "PK_AmbulanceLocationHistory",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceLocationHistory",
+          "name": "UQ_AmbulanceLocationHistory_Event",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceLocationHistory",
+          "name": "IX_AmbulanceLocationHistory_Ambulance_Time",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceLocationHistory",
+          "name": "IX_AmbulanceLocationHistory_ReceivedAt",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceOperationalEvents",
+          "name": "PK_AmbulanceOperationalEvents",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceOperationalEvents",
+          "name": "UQ_AmbulanceOperationalEvents_Event",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceOperationalEvents",
+          "name": "IX_AmbulanceOperationalEvents_Ambulance_Time",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "PK_Emergencies",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "UQ_Emergencies_IncidentCode",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "IX_Emergencies_Status",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "IX_Emergencies_Severity",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "IX_Emergencies_EmergencyType",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "IX_Emergencies_CreatedAt",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "IX_Emergencies_PatientId",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "UQ_Emergencies_ActiveAmbulance",
+          "is_unique": true,
+          "filter_definition": "([assigned_ambulance_id] IS NOT NULL AND ([status] IN ('DISPATCH_RECOMMENDED', 'DISPATCHED', 'EN_ROUTE', 'AT_PATIENT', 'TRANSPORTING', 'AT_HOSPITAL')))"
+        },
+        {
+          "table_name": "FleetDispatchOutbox",
+          "name": "PK__FleetDis__3213E83F5001A053",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "FleetDispatchOutbox",
+          "name": "UQ__FleetDis__2370F726D6965F67",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "FleetDispatchOutbox",
+          "name": "IX_FleetDispatchOutbox_Pending",
+          "is_unique": false,
+          "filter_definition": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "FK_EmergencyEvents_Emergency",
+          "table_name": "EmergencyEvents",
+          "references_table": "Emergencies",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_EmergencyEvents_User",
+          "table_name": "EmergencyEvents",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_EmergencyEvents_Ambulance",
+          "table_name": "EmergencyEvents",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_AuthAuditLogs_Users",
+          "table_name": "AuthAuditLogs",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_AmbulanceLocationHistory_Ambulance",
+          "table_name": "AmbulanceLocationHistory",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_AmbulanceOperationalEvents_Ambulance",
+          "table_name": "AmbulanceOperationalEvents",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Emergencies_Patients",
+          "table_name": "Emergencies",
+          "references_table": "Patients",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Emergencies_Users",
+          "table_name": "Emergencies",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK__FleetDisp__ambul__28ED12D1",
+          "table_name": "FleetDispatchOutbox",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Emergencies_Ambulances",
+          "table_name": "Emergencies",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Emergencies_Hospitals",
+          "table_name": "Emergencies",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Routes_Source",
+          "table_name": "HospitalRoutes",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Routes_Destination",
+          "table_name": "HospitalRoutes",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Patients_Hospitals",
+          "table_name": "Patients",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Ambulances_Hospitals",
+          "table_name": "Ambulances",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Timeline_Ambulances",
+          "table_name": "AmbulanceTimeline",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Feedback_Hospitals",
+          "table_name": "HospitalFeedback",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Emergencies_OverrideDispatcher",
+          "table_name": "Emergencies",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Users_ApprovedBy",
+          "table_name": "Users",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_DispatchRec_Emergency",
+          "table_name": "DispatchRecommendations",
+          "references_table": "Emergencies",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_DispatchRec_User",
+          "table_name": "DispatchRecommendations",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_DispatchRec_Ambulance",
+          "table_name": "DispatchRecommendations",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_DispatchRec_Hospital",
+          "table_name": "DispatchRecommendations",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_UserAuthIdentities_Users",
+          "table_name": "UserAuthIdentities",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        }
+      ]
+    },
+    "test": {
+      "verified": true,
+      "connection": {
+        "database_name": "DynamicAmbulanceDispatch_Test",
+        "tcp_port": 1433
+      },
+      "model_count": 15,
+      "missing_model_columns": [],
+      "migrations_reapplied": [
+        "006",
+        "007"
+      ],
+      "required": {
+        "Ambulances": [
+          "is_simulated",
+          "telemetry_checkpoint_at"
+        ],
+        "Emergencies": [
+          "version",
+          "is_simulated"
+        ],
+        "AmbulanceLocationHistory": [
+          "event_id"
+        ],
+        "AmbulanceOperationalEvents": [
+          "event_id"
+        ],
+        "FleetDispatchOutbox": [
+          "event_id"
+        ],
+        "DispatchRecommendations": [
+          "id"
+        ],
+        "EmergencyEvents": [
+          "id"
+        ],
+        "IdempotencyRecords": [
+          "id"
+        ]
+      },
+      "indexes": [
+        {
+          "table_name": "Emergencies",
+          "name": "PK_Emergencies",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "UQ_Emergencies_IncidentCode",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "IX_Emergencies_Status",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "IX_Emergencies_Severity",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "IX_Emergencies_EmergencyType",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "IX_Emergencies_CreatedAt",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "IX_Emergencies_PatientId",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "Emergencies",
+          "name": "UQ_Emergencies_ActiveAmbulance",
+          "is_unique": true,
+          "filter_definition": "([assigned_ambulance_id] IS NOT NULL AND ([status] IN ('DISPATCH_RECOMMENDED', 'DISPATCHED', 'EN_ROUTE', 'AT_PATIENT', 'TRANSPORTING', 'AT_HOSPITAL')))"
+        },
+        {
+          "table_name": "AmbulanceLocationHistory",
+          "name": "PK_AmbulanceLocationHistory",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceLocationHistory",
+          "name": "UQ_AmbulanceLocationHistory_Event",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceLocationHistory",
+          "name": "IX_AmbulanceLocationHistory_Ambulance_Time",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceLocationHistory",
+          "name": "IX_AmbulanceLocationHistory_ReceivedAt",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceOperationalEvents",
+          "name": "PK_AmbulanceOperationalEvents",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceOperationalEvents",
+          "name": "UQ_AmbulanceOperationalEvents_Event",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "AmbulanceOperationalEvents",
+          "name": "IX_AmbulanceOperationalEvents_Ambulance_Time",
+          "is_unique": false,
+          "filter_definition": null
+        },
+        {
+          "table_name": "FleetDispatchOutbox",
+          "name": "PK__FleetDis__3213E83FB2DF19E6",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "FleetDispatchOutbox",
+          "name": "UQ__FleetDis__2370F72690BB66AB",
+          "is_unique": true,
+          "filter_definition": null
+        },
+        {
+          "table_name": "FleetDispatchOutbox",
+          "name": "IX_FleetDispatchOutbox_Pending",
+          "is_unique": false,
+          "filter_definition": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "FK_AuthAuditLogs_Users",
+          "table_name": "AuthAuditLogs",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Emergencies_Patients",
+          "table_name": "Emergencies",
+          "references_table": "Patients",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Emergencies_Users",
+          "table_name": "Emergencies",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Emergencies_Ambulances",
+          "table_name": "Emergencies",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Emergencies_Hospitals",
+          "table_name": "Emergencies",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Emergencies_OverrideDispatcher",
+          "table_name": "Emergencies",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_DispatchRec_Emergency",
+          "table_name": "DispatchRecommendations",
+          "references_table": "Emergencies",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_DispatchRec_User",
+          "table_name": "DispatchRecommendations",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_DispatchRec_Ambulance",
+          "table_name": "DispatchRecommendations",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_DispatchRec_Hospital",
+          "table_name": "DispatchRecommendations",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_EmergencyEvents_Emergency",
+          "table_name": "EmergencyEvents",
+          "references_table": "Emergencies",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_EmergencyEvents_User",
+          "table_name": "EmergencyEvents",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_EmergencyEvents_Ambulance",
+          "table_name": "EmergencyEvents",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_AmbulanceLocationHistory_Ambulance",
+          "table_name": "AmbulanceLocationHistory",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_AmbulanceOperationalEvents_Ambulance",
+          "table_name": "AmbulanceOperationalEvents",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Routes_Source",
+          "table_name": "HospitalRoutes",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Routes_Destination",
+          "table_name": "HospitalRoutes",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Patients_Hospitals",
+          "table_name": "Patients",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK__FleetDisp__ambul__531856C7",
+          "table_name": "FleetDispatchOutbox",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Ambulances_Hospitals",
+          "table_name": "Ambulances",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Timeline_Ambulances",
+          "table_name": "AmbulanceTimeline",
+          "references_table": "Ambulances",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Feedback_Hospitals",
+          "table_name": "HospitalFeedback",
+          "references_table": "Hospitals",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_Users_ApprovedBy",
+          "table_name": "Users",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        },
+        {
+          "name": "FK_UserAuthIdentities_Users",
+          "table_name": "UserAuthIdentities",
+          "references_table": "Users",
+          "is_disabled": false,
+          "is_not_trusted": false
+        }
+      ]
+    }
+  },
+  "demo": {
+    "verified": true,
+    "incident_id": 265,
+    "ambulance_ids": [
+      86,
+      87,
+      88
+    ],
+    "sql_history": {
+      "locations": 1113,
+      "transitions": 5,
+      "locations_during_demo": 27,
+      "incorrect_simulation_flags": 0,
+      "duplicate_events": 0
+    },
+    "checks": [
+      "movement",
+      "live-GPS recommendation",
+      "assignment",
+      "lifecycle",
+      "stale GPS",
+      "offline/recovery",
+      "socket reconnect",
+      "SQL persistence"
+    ],
+    "browser_verified": false
+  },
+  "recovery": {
+    "verified": true,
+    "checks": [
+      "logout revocation rejected by a fresh Node process",
+      "normal Redis -> worker -> actual SQL",
+      "actual SQL TCP outage retains claimed batch; live Redis/socket stays responsive",
+      "SQL TCP restoration drains backlog",
+      "second worker cannot steal a live lease",
+      "worker restart recovers abandoned pending work",
+      "expired worker acknowledgment is rejected",
+      "replay does not duplicate SQL history",
+      "queue saturation rejects before mutating live state",
+      "graceful shutdown drains pending batch",
+      "duplicate IDs and out-of-order GPS rejected in actual Redis",
+      "actual Redis outage rejects telemetry and dispatch",
+      "actual Redis AOF restart preserves queue; store reconnects and SQL replay succeeds",
+      "socket reconnect restores authoritative snapshot"
+    ],
+    "outage_live_socket_ms": 17.641299999999774,
+    "sql": {
+      "locations": 6,
+      "all_simulated": 1
+    },
+    "conditions": {
+      "simulated_vehicles": 1,
+      "redis_port": 6385,
+      "sql_outage": "All application SQL connections interrupted through a local TCP proxy; shared SQL service not stopped",
+      "redis_persistence": "AOF appendfsync always"
+    }
+  },
+  "performance": {
+    "verified": true,
+    "conditions": {
+      "vehicles": 25,
+      "telemetry_events": 125,
+      "measured_burst_events": 100,
+      "persistence_sample_ms": 30000,
+      "batch_size": 100,
+      "socket_interval_ms": 1000
+    },
+    "burst_ms": 534.5949,
+    "ingest": {
+      "p50_ms": 4.850800000000163,
+      "p95_ms": 8.519800000000032
+    },
+    "warm_burst_sql_queries": 0,
+    "received_update_events": 25,
+    "snapshot": {
+      "p50_ms": 5.247100000000501,
+      "p95_ms": 7.933200000000397
+    },
+    "snapshots": 20,
+    "redis_mget_calls": 20,
+    "queue_before_drain": 25,
+    "sql_batch_queries_including_transaction": 3,
+    "persisted_locations": 25
+  },
+  "external": {
+    "checks": [
+      {
+        "name": "Data.gov.in hospital directory",
+        "http": null,
+        "status": "BLOCKED",
+        "reason": "connect ECONNREFUSED 164.100.61.198:443"
+      },
+      {
+        "name": "Google Places",
+        "http": 403,
+        "status": "BLOCKED",
+        "reason": "Requests to this API places.googleapis.com method google.maps.places.v1.Places.SearchNearby are blocked."
+      },
+      {
+        "name": "Google Routes",
+        "http": 200,
+        "status": "VERIFIED",
+        "routes": 1
+      }
+    ]
+  },
+  "google_identity": {
+    "reason": "Google browser reported the demo origin is not allowed for the configured client ID; automated identity tests use controlled mocks.",
+    "status": "BLOCKED"
+  },
+  "browser": {
+    "online_simulated_vehicles": 3,
+    "status": "VERIFIED",
+    "backend_outage_start_utc": "2026-10-07T03:33:24.159Z",
+    "screenshots": [
+      "docs/verification/fleet-dashboard.png",
+      "docs/verification/fleet-online-vehicles.png"
+    ],
+    "backend_restored_utc": "2026-10-07T03:34:33.397Z",
+    "marker_count_for_demo2": 1,
+    "automatic_reconnect_without_reload": true,
+    "observed_marker_positions": [
+      {
+        "y": 213.6,
+        "x": 451.4
+      },
+      {
+        "y": 200.6,
+        "x": 470.4
+      }
+    ],
+    "origin": "http://localhost:5175",
+    "simulator_stopped_after_capture": true
+  },
+  "cpp": {
+    "log": "Legacy/test-results-final.log",
+    "actual_solver_harness": "PASS",
+    "failed": 0,
+    "application_build": "PASS",
+    "real_odbc_reads": "PASS",
+    "phase5_legacy_write_guard": "PASS",
+    "importer_build": "PASS",
+    "existing_tests_passed": 2
+  },
+  "files_changed": [
+    "Legacy/database_repository.cpp",
+    "Legacy/database_repository.h",
+    "Legacy/hospital_final.cpp",
+    "Legacy/test_phase5.cpp",
+    "backend/src/config/env.js",
+    "backend/src/middleware/authenticate.js",
+    "backend/src/modules/auth/auth.controller.js",
+    "backend/src/modules/auth/session.service.js",
+    "backend/src/modules/dispatch/dispatchConfig.js",
+    "backend/src/modules/dispatch/dispatchEngine.service.js",
+    "backend/src/modules/dispatch/idempotency.service.js",
+    "backend/src/modules/emergencies/emergency.service.js",
+    "backend/src/modules/ambulances/ambulance.service.js",
+    "backend/src/modules/fleet/fleetDispatchOutbox.js",
+    "backend/src/modules/fleet/fleetTracker.service.js",
+    "backend/src/modules/fleet/fleetState.store.js",
+    "backend/src/modules/fleet/fleet.socket.js",
+    "backend/src/modules/fleet/telemetry.validation.js",
+    "backend/src/modules/fleet/telemetryAuth.middleware.js",
+    "backend/src/modules/hospitals/dataGov.service.js",
+    "backend/src/modules/hospitals/googleMaps.service.js",
+    "backend/src/modules/hospitals/hospital.service.js",
+    "backend/src/modules/hospitals/hospitalSync.service.js",
+    "backend/src/modules/hospitals/hospitalSync.scheduler.js",
+    "backend/src/utils/coordinates.js",
+    "backend/scripts/verifyDb.js",
+    "backend/scripts/setupTestDatabase.js",
+    "backend/scripts/verifyPhaseSchema.js",
+    "backend/scripts/verifyFleetDemo.js",
+    "backend/scripts/controlFleetDemo.js",
+    "backend/scripts/verifyFleetRecovery.js",
+    "backend/scripts/verifyFleetPerformance.js",
+    "backend/scripts/verifyExternalServices.js",
+    "backend/tests/databaseSafety.setup.js",
+    "backend/tests/phase3.test.js",
+    "backend/tests/fleet_safety.test.js",
+    "backend/tests/fleet_integration.test.js",
+    "frontend/src/components/FleetDigitalTwinPanel.jsx",
+    "frontend/src/components/GoogleMapView.jsx",
+    "frontend/src/services/fleetService.js",
+    "frontend/src/services/fleetState.js",
+    "frontend/src/tests/FleetDigitalTwin.test.jsx",
+    "frontend/src/tests/FleetMap.test.jsx",
+    "frontend/src/tests/FleetService.test.jsx",
+    "PHASE1_5_AUDIT.md",
+    "PHASE1_5_PROGRESS.md",
+    "PHASE1_5_COMPLETION.md",
+    "PRODUCT.md",
+    "docs/phase5_fleet_digital_twin.md",
+    "docs/verification/phase1_5_results.json",
+    "docs/verification/fleet-dashboard.png",
+    "docs/verification/fleet-online-vehicles.png"
+  ]
+}

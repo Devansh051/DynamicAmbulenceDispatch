@@ -29,7 +29,7 @@ class HospitalSyncScheduler {
     logger.info(`[HospitalSyncScheduler] Initializing automated 3-day hospital synchronization (Interval: ${intervalDays} days / ${intervalMs / 3600000}h)...`);
 
     // Check if initial synchronization is needed on server startup
-    setTimeout(async () => {
+    this.startupTimer = setTimeout(async () => {
       try {
         await hospitalSyncService.recoverStaleRunningJobs();
         await this.checkAndRunSync();
@@ -94,6 +94,8 @@ class HospitalSyncScheduler {
    * Stop scheduler gracefully on process termination
    */
   stop() {
+    clearTimeout(this.startupTimer);
+    this.startupTimer = null;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;

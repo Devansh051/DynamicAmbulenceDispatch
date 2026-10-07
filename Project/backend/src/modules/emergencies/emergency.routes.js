@@ -29,6 +29,8 @@ import requireActiveAccount from '../../middleware/requireActiveAccount.js';
 import validateRequest from '../../middleware/validateRequest.js';
 import { USER_ROLES } from '../users/user.model.js';
 
+import authorizeIncidentAccess from '../../middleware/authorizeIncidentAccess.js';
+
 const router = Router();
 
 // Core Emergency Operations
@@ -45,6 +47,7 @@ router.get(
   authenticate,
   requireActiveAccount,
   authorize(USER_ROLES.ADMIN, USER_ROLES.DISPATCHER, USER_ROLES.AMBULANCE_CREW),
+  authorizeIncidentAccess,
   getEmergencyById
 );
 
@@ -72,6 +75,7 @@ router.patch(
   authenticate,
   requireActiveAccount,
   authorize(USER_ROLES.ADMIN, USER_ROLES.DISPATCHER, USER_ROLES.AMBULANCE_CREW),
+  authorizeIncidentAccess,
   updateResponseLifecycleStatus
 );
 
@@ -148,6 +152,7 @@ router.get(
   authenticate,
   requireActiveAccount,
   authorize(USER_ROLES.ADMIN, USER_ROLES.DISPATCHER, USER_ROLES.AMBULANCE_CREW),
+  authorizeIncidentAccess,
   getEmergencyEventHistory
 );
 
@@ -157,6 +162,7 @@ router.get(
   authenticate,
   requireActiveAccount,
   authorize(USER_ROLES.ADMIN, USER_ROLES.DISPATCHER, USER_ROLES.AMBULANCE_CREW),
+  authorizeIncidentAccess,
   getEmergencyHospitals
 );
 
@@ -178,4 +184,3 @@ router.post(
 );
 
 export default router;
-

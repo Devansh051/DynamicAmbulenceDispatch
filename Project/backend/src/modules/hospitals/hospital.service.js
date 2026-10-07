@@ -6,6 +6,8 @@ import AuthAuditLog from '../audit/audit.model.js';
 import sequelize from '../../config/database.js';
 import logger from '../../utils/logger.js';
 import googleMapsService from './googleMaps.service.js';
+import fleetTracker from '../fleet/fleetTracker.service.js';
+import { hasValidCoordinates } from '../../utils/coordinates.js';
 
 class HospitalService {
   async listHospitals({
@@ -156,8 +158,8 @@ class HospitalService {
       facility_type: facility_type || undefined,
       ownership: ownership || undefined,
       phone: phone || null,
-      latitude: latitude || null,
-      longitude: longitude || null,
+      latitude: latitude ?? null,
+      longitude: longitude ?? null,
       is_active: true,
       data_source: DATA_SOURCES.MANUAL
     });
@@ -271,24 +273,17 @@ class HospitalService {
     if (ambulance_id) {
       ambulanceRecord = await Ambulance.findByPk(ambulance_id);
       if (ambulanceRecord) {
-        if (ambulanceRecord.current_location_lat && ambulanceRecord.current_location_lng) {
-          lat = parseFloat(ambulanceRecord.current_location_lat);
-          lng = parseFloat(ambulanceRecord.current_location_lng);
-          originType = 'AMBULANCE_LIVE_GPS';
-          locationTimestamp = ambulanceRecord.updated_at || ambulanceRecord.created_at;
-          if (locationTimestamp) {
-            const ageMs = Date.now() - new Date(locationTimestamp).getTime();
-            isAmbulanceGpsStale = ageMs > 15 * 60 * 1000; // >15 minutes considered stale
-          }
-        } else if (ambulanceRecord.CurrentHospitalID && (isNaN(lat) || isNaN(lng))) {
-          // If ambulance has no GPS but is stationed at a legacy hospital, resolve from station hospital
-          const stationHospital = await Hospital.findByPk(ambulanceRecord.CurrentHospitalID);
-          if (stationHospital && stationHospital.latitude && stationHospital.longitude) {
-            lat = parseFloat(stationHospital.latitude);
-            lng = parseFloat(stationHospital.longitude);
+        const live = (await fleetTracker.getLiveStates([ambulanceRecord.AmbulanceID])).get(ambulanceRecord.AmbulanceID);
+        if (live?.health === 'ONLINE' && hasValidCoordinates(live.latitude, live.longitude)) {
+          lat = Number(live.latitude); lng = Number(live.longitude);
+          originType = 'AMBULANCE_LIVE_GPS'; locationTimestamp = live.last_gps_at;
+        } else {
+          isAmbulanceGpsStale = true;
+          const stationHospital = ambulanceRecord.CurrentHospitalID ? await Hospital.findByPk(ambulanceRecord.CurrentHospitalID) : null;
+          if (hasValidCoordinates(stationHospital?.latitude, stationHospital?.longitude)) {
+            lat = Number(stationHospital.latitude); lng = Number(stationHospital.longitude);
             originType = 'AMBULANCE_STATION';
-            locationTimestamp = stationHospital.updated_at || stationHospital.created_at;
-          }
+          } else { lat = NaN; lng = NaN; }
         }
       }
     }
@@ -385,16 +380,16 @@ class HospitalService {
       }
 
       // If no match by ID, check proximity (< 250m) and exact name similarity (do not merge ambiguous matches)
-      if (matchIndex === -1 && place.latitude && place.longitude) {
+      if (matchIndex === -1 && hasValidCoordinates(place.latitude, place.longitude)) {
         const placeNorm = place.name.toLowerCase().replace(/[^\w\s]/gi, '').trim();
         const candidateMatches = [];
 
         unifiedCandidates.forEach((c, idx) => {
-          if (c.latitude && c.longitude) {
+          if (hasValidCoordinates(c.latitude, c.longitude)) {
             const dist = googleMapsService.calculateHaversineDistance(c.latitude, c.longitude, place.latitude, place.longitude);
             if (dist < 250) {
               const candNorm = (c.name || c.HospitalName || '').toLowerCase().replace(/[^\w\s]/gi, '').trim();
-              if (candNorm === placeNorm) {
+              if (candNorm === placeNorm && (!c.google_place_id || !place.google_place_id || c.google_place_id === place.google_place_id)) {
                 candidateMatches.push(idx);
               }
             }

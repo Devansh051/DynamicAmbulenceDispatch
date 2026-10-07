@@ -1,3 +1,4 @@
+import { recordAmbulanceOperationalChange } from '../fleet/fleetDispatchOutbox.js';
 import { Op } from 'sequelize';
 import Ambulance, {
   AMBULANCE_STATUS,
@@ -9,6 +10,7 @@ import AmbulanceTimeline from './ambulanceTimeline.model.js';
 import Hospital from '../hospitals/hospital.model.js';
 import AuthAuditLog from '../audit/audit.model.js';
 import sequelize from '../../config/database.js';
+import fleetTrackerService from '../fleet/fleetTracker.service.js';
 
 class AmbulanceService {
   async getAmbulances(options = {}) {
@@ -176,8 +178,8 @@ class AmbulanceService {
         registration_number: registration_number || null,
         Fuel: fuel_level,
         Status: status.toLowerCase(),
-        current_location_lat: current_location_lat || null,
-        current_location_lng: current_location_lng || null,
+        current_location_lat: current_location_lat ?? null,
+        current_location_lng: current_location_lng ?? null,
         is_active: true
       }, { transaction });
 
@@ -297,6 +299,9 @@ class AmbulanceService {
 
     const transaction = await sequelize.transaction();
     try {
+      await sequelize.query('SELECT AmbulanceID FROM dbo.Ambulances WITH (UPDLOCK, HOLDLOCK) WHERE AmbulanceID = :id', { replacements: { id: ambulance.AmbulanceID }, transaction });
+      const [assignments] = await sequelize.query("SELECT TOP (1) id FROM dbo.Emergencies WHERE assigned_ambulance_id = :id AND status IN ('DISPATCHED','EN_ROUTE','AT_PATIENT','TRANSPORTING','AT_HOSPITAL')", { replacements: { id: ambulance.AmbulanceID }, transaction });
+      if (assignments.length) throw Object.assign(new Error('Use the incident lifecycle to update an actively assigned ambulance.'), { status: 409, code: 'AMBULANCE_ACTIVELY_ASSIGNED' });
       await ambulance.save({ transaction });
 
       // Add timeline event matching C++ dispatch audit structure
@@ -313,7 +318,16 @@ class AmbulanceService {
         details: `Ambulance #${ambulance.AmbulanceID} status changed from ${prevStatus} to ${newStatus}`
       }, { transaction });
 
+      if (prevStatus !== newStatus) await recordAmbulanceOperationalChange({ ambulanceId: ambulance.AmbulanceID,
+        status: normalizedStatus === AMBULANCE_STATUS.AVAILABLE ? 'AVAILABLE' : 'ASSIGNED',
+        previousStatus: normalizeAmbulanceStatus(prevStatus) === AMBULANCE_STATUS.AVAILABLE ? 'AVAILABLE' : 'ASSIGNED',
+        simulated: ambulance.is_simulated, sourceId: 'manual-ambulance-status' }, transaction);
       await transaction.commit();
+      fleetTrackerService.syncOperationalState({
+        ambulanceId: ambulance.AmbulanceID,
+        operationalStatus: normalizedStatus === AMBULANCE_STATUS.AVAILABLE ? 'AVAILABLE' : 'ASSIGNED',
+        sourceId: 'manual-ambulance-status'
+      }).catch(() => {});
       return this.getAmbulanceById(ambulance.AmbulanceID);
     } catch (err) {
       await transaction.rollback();

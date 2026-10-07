@@ -56,7 +56,7 @@ A mission-critical emergency dispatch platform uniting deterministic C++ shortes
 
 - Monorepo containing full-stack implementation through Phase 4 in `frontend/` (React + Vite + Tailwind CSS), `backend/` (Node.js + Express + Sequelize + MSSQL), and `Legacy/` (C++ ODBC engines).
 - Complete engineering documentation in `docs/` (`architecture.md`, `database_compatibility.md`, `phase2_auth_guide.md`, `phase3_data_management.md`, `phase4_hospital_maps_integration.md`).
-- Comprehensive test coverage: 126 passed backend tests (10/10 suites) and 30 passed frontend tests (6/6 suites).
+- Current verification: 181 backend tests across 14 suites and 45 frontend tests across 10 files passed on October 7, 2026. See [Phase 1-5 acceptance evidence](PHASE1_5_COMPLETION.md) for commands, integration results and external blockers.
 - **Phase 5 Dispatch Engine & Workflow**: Multi-factor scoring engine (Travel Time 40%, Capability 20%, Coverage 20%, Fuel 10%, Freshness 10%), human approval enforcement, dispatcher override capture, recommendation TTL expiry (5m), pre-assignment revalidation, filtered unique index concurrency protection (`UQ_Emergencies_ActiveAmbulance`), SHA-256 idempotency key protection, and append-only event audit history.
 - **Explicit Absence**: Live real-time telemetry for hospital ICU beds (must remain displayed as unintegrated/unavailable, never mocked as real-time).
 

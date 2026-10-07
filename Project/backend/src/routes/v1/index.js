@@ -7,6 +7,7 @@ import hospitalRoutes from '../../modules/hospitals/hospital.routes.js';
 import emergencyRoutes from '../../modules/emergencies/emergency.routes.js';
 import zoneRoutes from '../../modules/zones/zone.routes.js';
 import dispatchRoutes from '../../modules/dispatch/dispatch.routes.js';
+import fleetRoutes from '../../modules/fleet/fleet.routes.js';
 import { formatSuccess } from '../../utils/responseFormatter.js';
 import Hospital from '../../modules/hospitals/hospital.model.js';
 import Ambulance from '../../modules/ambulances/ambulance.model.js';
@@ -39,6 +40,7 @@ router.use('/zones', zoneRoutes);
 
 // Mount Phase 5 dispatch engine & fleet response routes
 router.use('/dispatch', dispatchRoutes);
+router.use('/fleet', fleetRoutes);
 
 // Phase 4: Admin Hospital Directory Synchronization routes
 const adminHospitalRouter = Router();
@@ -49,7 +51,7 @@ adminHospitalRouter.get('/sync/history', authenticate, requireActiveAccount, aut
 router.use('/admin/hospitals', adminHospitalRouter);
 
 // Read-only overview endpoint for EMS dashboard summary
-router.get('/overview', async (req, res, next) => {
+router.get('/overview', authenticate, requireActiveAccount, authorize(USER_ROLES.ADMIN, USER_ROLES.DISPATCHER), async (req, res, next) => {
   try {
     const [hospitals, ambulances, emergenciesCount, zonesCount] = await Promise.all([
       Hospital.findAll({

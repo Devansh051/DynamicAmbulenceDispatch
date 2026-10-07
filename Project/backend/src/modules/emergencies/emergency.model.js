@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../../config/database.js';
+import { recordFleetDispatchChange } from '../fleet/fleetDispatchOutbox.js';
 
 export const EMERGENCY_STATUS = Object.freeze({
   REPORTED: 'REPORTED',
@@ -47,6 +48,11 @@ export const Emergency = sequelize.define('Emergency', {
   patient_id: {
     type: DataTypes.INTEGER,
     allowNull: true
+  },
+  is_simulated: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
   },
   reported_by_user_id: {
     type: DataTypes.INTEGER,
@@ -145,9 +151,11 @@ export const Emergency = sequelize.define('Emergency', {
   tableName: 'Emergencies',
   schema: 'dbo',
   timestamps: true,
+  version: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
   hooks: {
+    afterSave: recordFleetDispatchChange,
     beforeValidate: (emergency) => {
       if (!emergency.incident_code) {
         const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');

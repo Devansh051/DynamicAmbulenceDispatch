@@ -1,6 +1,7 @@
 import axios from 'axios';
 import env from '../../config/env.js';
 import logger from '../../utils/logger.js';
+import { hasValidCoordinates } from '../../utils/coordinates.js';
 
 class GoogleMapsService {
   constructor() {
@@ -26,8 +27,11 @@ class GoogleMapsService {
    */
   sanitizeError(error) {
     if (!error) return 'Unknown error';
-    const msg = error.response?.data?.error?.message || error.message || String(error);
-    return String(msg).replace(/(key|api[-_]?key)=[^&]+/gi, '$1=[REDACTED_API_KEY]');
+    let msg = String(error.response?.data?.error?.message || error.message || error);
+    for (const key of [this.apiKey, env.googleMaps.apiKey]) {
+      if (key) msg = msg.split(key).join('[REDACTED_API_KEY]');
+    }
+    return msg.replace(/(key|api[-_]?key)=[^&\s]+/gi, '$1=[REDACTED_API_KEY]');
   }
 
   /**
@@ -47,7 +51,7 @@ class GoogleMapsService {
           throw err;
         }
         const wait = delayMs * Math.pow(2, attempt - 1);
-        logger.warn(`[GoogleMapsService] ${operation} attempt ${attempt} failed (${err.message}). Retrying in ${wait}ms...`);
+        logger.warn(`[GoogleMapsService] ${operation} attempt ${attempt} failed (${this.sanitizeError(err)}). Retrying in ${wait}ms...`);
         await new Promise((res) => setTimeout(res, wait));
       }
     }
@@ -73,12 +77,12 @@ class GoogleMapsService {
   /**
    * Fallback estimation of driving route distance & duration when Google Routes API is unavailable
    */
-  estimateRouteFallback(originLat, originLng, destLat, destLng) {
+  estimateRouteFallback(originLat, originLng, destLat, destLng, speedKph = 35) {
     const straightDistance = this.calculateHaversineDistance(originLat, originLng, destLat, destLng);
     // Typical urban detour index is ~1.3x straight-line distance
     const roadDistanceMeters = Math.round(straightDistance * 1.3);
     // Average EMS speed in urban traffic ~35 km/h = 9.72 m/s
-    const durationSeconds = Math.max(60, Math.round(roadDistanceMeters / 9.72));
+    const durationSeconds = Math.max(60, Math.round(roadDistanceMeters / ((Number(speedKph) > 0 ? Number(speedKph) : 35) / 3.6)));
     const durationMinutes = Math.round(durationSeconds / 60);
 
     return {
@@ -96,12 +100,12 @@ class GoogleMapsService {
     };
   }
 
-  calculateHaversineDistanceAndTime(origin, destination) {
+  calculateHaversineDistanceAndTime(origin, destination, speedKph = 35) {
     const oLat = origin.latitude ?? origin.lat;
     const oLng = origin.longitude ?? origin.lng;
     const dLat = destination.latitude ?? destination.lat;
     const dLng = destination.longitude ?? destination.lng;
-    return this.estimateRouteFallback(oLat, oLng, dLat, dLng);
+    return this.estimateRouteFallback(oLat, oLng, dLat, dLng, speedKph);
   }
 
   /**
@@ -144,7 +148,7 @@ class GoogleMapsService {
             this.placesUrl,
             {
               includedTypes: ['hospital'],
-              maxResultCount: 20,
+              maxResultCount: 30,
               locationRestriction: {
                 circle: {
                   center: { latitude: lat, longitude: lng },
@@ -415,7 +419,7 @@ class GoogleMapsService {
       if (!result) return null;
 
       const loc = result.geometry?.location;
-      if (loc && loc.lat && loc.lng) {
+      if (loc && hasValidCoordinates(loc.lat, loc.lng)) {
         return {
           latitude: Number(loc.lat.toFixed(7)),
           longitude: Number(loc.lng.toFixed(7)),

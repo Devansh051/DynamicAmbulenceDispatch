@@ -13,6 +13,7 @@ export const sequelize = new Sequelize(
   env.db.password,
   {
     host: env.db.host,
+    port: env.db.port,
     dialect: 'mssql',
     dialectOptions: {
       options: {

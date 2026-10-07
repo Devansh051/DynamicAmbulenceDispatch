@@ -25,14 +25,12 @@
 
 ---
 
-## Subsequent Phases
+## Phase 5 (Completed): Live Fleet Digital Twin
 
-| Functionality | Target Web Architecture Module | Phase | Technical Implementation Strategy |
-| :--- | :--- | :--- | :--- |
-| Floyd-Warshall / Dijkstra Pathfinding | `backend/src/modules/routing/` | Phase 4 | JavaScript graph solver class + route recommendation engine |
-| Nearest-Ambulance Selection & Matching | `backend/src/modules/dispatch/` | Phase 4 | Nearest-neighbor algorithm with fuel threshold filtering |
-| 6-Digit OTP Confirmation | `backend/src/modules/otp/` | Phase 4 | Time-based OTP service with session/redis token verification |
-| Live GPS Fleet Tracking & Map Visualization | `frontend/src/modules/maps/` | Phase 4 | Mapbox / Leaflet integration showing ambulances and hospital nodes |
-| Real-time Dispatch Broadcasting | WebSocket / Socket.IO | Phase 4 | Bidirectional push notifications on dispatch and status change |
-| Dynamic Relocation & Demand Prediction | `backend/src/modules/relocation/` | Phase 5 | Predictive relocation matrix and historical emergency clustering |
+- **Telemetry ingestion and authorization:** Validated, authenticated GPS and heartbeat endpoints with out-of-order protection, rate limits, and simulated/real vehicle isolation.
+- **Redis live state:** Atomic current-state merges, health classification, dispatcher snapshots, and SQL-restart fallback clearly marked as historical.
+- **Real-time dispatcher experience:** Authenticated Socket.IO snapshots, resync behavior, live map markers, health states, selection, and a fleet connection indicator integrated into the existing dashboard.
+- **Controlled persistence:** Redis-backed queue, sampled SQL Server location history, independently recorded status transitions, retry/recovery handling, and operational queue visibility.
+- **Development simulator:** Opt-in deterministic simulated vehicles, patrol/stationary modes, independent heartbeats, pause/resume/shutdown, and isolated lifecycle testing.
 
+See [Phase 5 fleet digital twin](phase5_fleet_digital_twin.md) for configuration, API/socket contracts, and operating instructions.

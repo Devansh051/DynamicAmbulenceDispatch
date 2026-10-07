@@ -6,6 +6,7 @@ import dataGovService from './dataGov.service.js';
 import googleMapsService from './googleMaps.service.js';
 import env from '../../config/env.js';
 import logger from '../../utils/logger.js';
+import { hasValidCoordinates } from '../../utils/coordinates.js';
 
 // Phase 4 Specification Source of Truth: 250 meters matching threshold
 export const HOSPITAL_MATCHING_PROXIMITY_THRESHOLD_METERS = 250;
@@ -32,21 +33,22 @@ class HospitalSyncService {
    */
   async acquireDistributedLock() {
     try {
+      this.lockTransaction = await sequelize.transaction();
       const [result] = await sequelize.query(`
         DECLARE @res INT;
         EXEC @res = sp_getapplock
           @Resource = 'HospitalSync_ExecutionLock',
           @LockMode = 'Exclusive',
-          @LockOwner = 'Session',
+          @LockOwner = 'Transaction',
           @LockTimeout = 0;
         SELECT @res AS lockResult;
-      `);
+      `, { transaction: this.lockTransaction });
       const code = result[0]?.lockResult;
       // 0: Lock granted synchronously, 1: Lock granted after wait, <0: Failed / Timeout
       return typeof code === 'number' && code >= 0;
     } catch (err) {
-      logger.warn(`[HospitalSyncService] Distributed lock check error (${err.message}), falling back to database table lock.`);
-      return true;
+      await this.releaseDistributedLock();
+      throw err;
     }
   }
 
@@ -54,15 +56,9 @@ class HospitalSyncService {
    * Release SQL Server distributed lock
    */
   async releaseDistributedLock() {
-    try {
-      await sequelize.query(`
-        EXEC sp_releaseapplock
-          @Resource = 'HospitalSync_ExecutionLock',
-          @LockOwner = 'Session';
-      `);
-    } catch (err) {
-      // Ignored if lock was not held by session
-    }
+    const transaction = this.lockTransaction;
+    this.lockTransaction = null;
+    if (transaction && !transaction.finished) await transaction.rollback();
   }
 
   /**
@@ -112,6 +108,8 @@ class HospitalSyncService {
       };
     }
 
+    this.isSyncing = true;
+    try {
     // 2. Recover any crashed or stale jobs before checking active state
     await this.recoverStaleRunningJobs();
 
@@ -233,7 +231,7 @@ class HospitalSyncService {
           // Rule B: Cautious matching by normalized name + proximity (< 250m)
           // Follow original Phase 4 specification: 250-metre threshold (not 500m)
           // Do not automatically merge ambiguous matches!
-          if (!matchedHospital && fac.latitude && fac.longitude) {
+          if (!matchedHospital && hasValidCoordinates(fac.latitude, fac.longitude)) {
             const facLat = parseFloat(fac.latitude);
             const facLng = parseFloat(fac.longitude);
 
@@ -297,7 +295,7 @@ class HospitalSyncService {
               if (fac.district && !matchedHospital.district) {
                 updates.district = fac.district;
               }
-              if (fac.latitude && fac.longitude && (!matchedHospital.latitude || !matchedHospital.longitude)) {
+              if (hasValidCoordinates(fac.latitude, fac.longitude) && !hasValidCoordinates(matchedHospital.latitude, matchedHospital.longitude)) {
                 updates.latitude = fac.latitude;
                 updates.longitude = fac.longitude;
               }
@@ -335,8 +333,8 @@ class HospitalSyncService {
               district: fac.district || 'Bengaluru',
               state: fac.state || 'Karnataka',
               postal_code: fac.postal_code || null,
-              latitude: fac.latitude || null,
-              longitude: fac.longitude || null,
+              latitude: fac.latitude ?? null,
+              longitude: fac.longitude ?? null,
               facility_type: fac.facility_type || 'GENERAL_HOSPITAL',
               ownership: fac.ownership || 'PUBLIC',
               phone: fac.phone || null,
@@ -424,6 +422,7 @@ class HospitalSyncService {
         status: SYNC_STATUS.FAILED,
         error: syncErr.message
       };
+    }
     } finally {
       this.isSyncing = false;
       await this.releaseDistributedLock();

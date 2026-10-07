@@ -146,7 +146,7 @@ void findShortestPath(int hospitals, int weights[15][15], int src, int dest, cha
     for (int k = 0; k < hospitals; k++) {
         for (int i = 0; i < hospitals; i++) {
             for (int j = 0; j < hospitals; j++) {
-                if (weights[i][k] + weights[k][j] < weights[i][j]) {
+                if (weights[i][k] < 10000 && weights[k][j] < 10000 && weights[i][k] + weights[k][j] < weights[i][j]) {
                     weights[i][j] = weights[i][k] + weights[k][j];
                 }
             }
@@ -337,13 +337,15 @@ int readAmbulances(Ambulance ambulances[], int maxAmb) {
 
 // Find nearest available ambulance to a given hospital
 int findNearestAmbulance(Ambulance ambulances[], int ambCount, int src, int weights[15][15]) {
+    if (src < 1 || src > 15) return -1;
     int minDist = INT_MAX, ambIdx = -1;
     for (int i = 0; i < ambCount; ++i) {
+        if (ambulances[i].location < 1 || ambulances[i].location > 15) continue;
         if (strcmp(ambulances[i].status, "available") != 0 ||
             ambulances[i].fuel < MIN_FUEL_THRESHOLD)
             continue;
         int dist = weights[ambulances[i].location - 1][src - 1];
-        if (dist > 0 && dist < minDist) {
+        if (dist >= 0 && dist < 10000 && dist < minDist) {
             minDist = dist;
             ambIdx = i;
         }
@@ -519,6 +521,28 @@ void displayDispatchTimestamp(const char* event) {
         sscanf(event, "%*[^A]Ambulance %d", &ambulanceId);
     if (!database().addTimelineEventAt(ambulanceId, "Dispatch", event, timestamp))
         cout << "Warning: Could not save timeline event to SQL Server." << endl;
+}
+
+// Existing Dijkstra solver, shared with regression checks.
+void computeShortestPaths(int hospitals, Node** adjList, int source, int distance[], int previous[]) {
+    bool visited[15]{};
+    for (int i = 0; i < hospitals; ++i) { distance[i] = INT_MAX; previous[i] = -1; }
+    if (source < 0 || source >= hospitals) return;
+    distance[source] = 0;
+    for (int count = 0; count < hospitals; ++count) {
+        int u = -1;
+        for (int v = 0; v < hospitals; ++v)
+            if (!visited[v] && distance[v] != INT_MAX && (u == -1 || distance[v] < distance[u])) u = v;
+        if (u == -1) break;
+        visited[u] = true;
+        for (Node* cur = adjList[u]; cur; cur = cur->link) {
+            int v = atoi(cur->hospital_name) - 1;
+            if (v >= 0 && v < hospitals && !visited[v] && cur->weight >= 0 && cur->weight < 10000 &&
+                distance[u] <= INT_MAX - cur->weight && distance[u] + cur->weight < distance[v]) {
+                distance[v] = distance[u] + cur->weight; previous[v] = u;
+            }
+        }
+    }
 }
 
 int main() {
@@ -790,46 +814,8 @@ int main() {
                 } else {
                     cout << "\nFinding the optimal route: " << endl;
 
-                    // Initialize arrays for Dijkstra's algorithm
-                    int distance[15];
-                    int previous[15];
-                    bool visited[15];
-
-                    for (int i = 0; i < hospitals; i++) {
-                        distance[i] = INT_MAX;
-                        previous[i] = -1;
-                        visited[i] = false;
-                    }
-
-                    distance[src - 1] = 0;
-
-                    // Find the optimal route
-                    for (int count = 0; count < hospitals - 1; count++) {
-                        int u = -1;
-                        int minDistance = INT_MAX;
-
-                        // Select the node with the minimum distance
-                        for (int v = 0; v < hospitals; v++) {
-                            if (!visited[v] && distance[v] < minDistance) {
-                                u = v;
-                                minDistance = distance[v];
-                            }
-                        }
-
-                        // Mark the selected node as visited
-                        visited[u] = true;
-
-                        // Update distances of the adjacent nodes
-                        Node* cur = adjList[u];
-                        while (cur != nullptr) {
-                            int v = atoi(cur->hospital_name) - 1;
-                            if (!visited[v] && distance[u] + cur->weight < distance[v]) {
-                                distance[v] = distance[u] + cur->weight;
-                                previous[v] = u;
-                            }
-                            cur = cur->link;
-                        }
-                    }
+                    int distance[15], previous[15];
+                    computeShortestPaths(hospitals, adjList, src - 1, distance, previous);
 
                     // Display the optimal route and average edge weight
                     cout << "\nOptimal route from " << hospital_names[src - 1] << " to " << hospital_names[dest - 1] << ": " << endl;
@@ -894,40 +880,7 @@ int main() {
                             if (switchChoice == 'y' || switchChoice == 'Y') {
                                 dest = bestHospital;
 
-                                // Reset arrays for new route calculation
-                                for (int i = 0; i < hospitals; i++) {
-                                    distance[i] = INT_MAX;
-                                    previous[i] = -1;
-                                    visited[i] = false;
-                                }
-
-                                // Set distance to source to 0
-                                distance[src - 1] = 0;
-
-                                // Find the optimal route for new destination
-                                for (int count = 0; count < hospitals - 1; count++) {
-                                    int u = -1;
-                                    int minDistance = INT_MAX;
-
-                                    for (int v = 0; v < hospitals; v++) {
-                                        if (!visited[v] && distance[v] < minDistance) {
-                                            u = v;
-                                            minDistance = distance[v];
-                                        }
-                                    }
-
-                                    visited[u] = true;
-
-                                    Node* cur2 = adjList[u];
-                                    while (cur2 != nullptr) {
-                                        int v = atoi(cur2->hospital_name) - 1;
-                                        if (!visited[v] && distance[u] + cur2->weight < distance[v]) {
-                                            distance[v] = distance[u] + cur2->weight;
-                                            previous[v] = u;
-                                        }
-                                        cur2 = cur2->link;
-                                    }
-                                }
+                                computeShortestPaths(hospitals, adjList, src - 1, distance, previous);
 
                                 // Display the new optimal route
                                 cout << "\nNew optimal route from " << hospital_names[src - 1] << " to " << hospital_names[dest - 1] << ": " << endl;

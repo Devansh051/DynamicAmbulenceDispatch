@@ -13,6 +13,7 @@ import sessionService from '../src/modules/auth/session.service.js';
 import dispatchEngineService from '../src/modules/dispatch/dispatchEngine.service.js';
 import idempotencyService from '../src/modules/dispatch/idempotency.service.js';
 import DISPATCH_CONFIG from '../src/modules/dispatch/dispatchConfig.js';
+import env from '../src/config/env.js';
 
 describe('Phase 5: Ambulance Dispatch Engine & Emergency Response Workflow', () => {
   let adminUser, dispatcherUser, crewUser;
@@ -134,6 +135,7 @@ describe('Phase 5: Ambulance Dispatch Engine & Emergency Response Workflow', () 
     } else {
       testAmb2.Status = 'available';
       testAmb2.Fuel = 70;
+      testAmb2.vehicle_type = 'BASIC_LIFE_SUPPORT';
       testAmb2.is_active = true;
       testAmb2.current_location_lat = 12.9800;
       testAmb2.current_location_lng = 77.6000;
@@ -336,7 +338,8 @@ describe('Phase 5: Ambulance Dispatch Engine & Emergency Response Workflow', () 
       expect(res.body.error.code).toBe('OVERRIDE_REASON_REQUIRED');
     });
 
-    test('permits dispatcher override when valid override_reason is provided', async () => {
+    test('permits dispatcher override only after clinical capability is verified', async () => {
+      await testAmb2.update({ vehicle_type: 'ADVANCED_LIFE_SUPPORT' });
       const recRes = await request(app)
         .get(`/api/v1/emergencies/${testEmergency.id}/recommendations`)
         .set('Authorization', `Bearer ${dispatcherToken}`);
@@ -359,6 +362,7 @@ describe('Phase 5: Ambulance Dispatch Engine & Emergency Response Workflow', () 
       expect(res.body.success).toBe(true);
       expect(res.body.data.status).toBe('DISPATCHED');
       expect(res.body.data.assigned_ambulance_id).toBe(nonTopAmbId);
+      env.fleet.crewBindings[String(crewUser.id)] = nonTopAmbId;
       expect(res.body.data.override_reason).toContain('cardiac equipment');
 
       // Verify idempotency replay returns identical cached response
@@ -447,6 +451,7 @@ describe('Phase 5: Ambulance Dispatch Engine & Emergency Response Workflow', () 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.assigned_ambulance_id).toBe(testAmb1.AmbulanceID);
+      env.fleet.crewBindings[String(crewUser.id)] = testAmb1.AmbulanceID;
 
       // Verify prior ambulance testAmb2 was released back to 'available'
       await testAmb2.reload();
